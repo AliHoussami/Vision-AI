@@ -15,14 +15,21 @@ Run:
 """
 
 import cv2
+import sys
+from pathlib import Path
+
+# Allow running this file directly (python tools/xxx.py) by putting the
+# project root on sys.path before importing the package.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import numpy as np
 
-from footfall_tracker import FootfallTracker, Point
+from footfall import FootfallTracker, Point, output
 
 WIDTH, HEIGHT = 960, 540
 FPS = 20
 DURATION_SEC = 8
-SYNTH_VIDEO = "synthetic_input.mp4"
+SYNTH_VIDEO = output("synthetic_input.mp4")
 
 
 def make_synthetic_video():
@@ -86,8 +93,8 @@ def main():
             Point(WIDTH * 0.55, HEIGHT * 0.85),
             Point(WIDTH * 0.35, HEIGHT * 0.85),
         ],
-        output_video="annotated_out.mp4",
-        events_csv="events.csv",
+        output_video=output("annotated_out.mp4"),
+        events_csv=output("events.csv"),
         conf=0.15,  # low threshold since synthetic silhouettes are crude
     )
     summary = tracker.run()
@@ -97,8 +104,8 @@ def main():
         print(f"   {k}: {v}")
 
     print("\nOutputs:")
-    print("  - annotated_out.mp4  (video with boxes/line/zone overlay)")
-    print("  - events.csv         (raw in/out and zone enter/exit events)")
+    print("  - output/annotated_out.mp4  (boxes/line/zone overlay)")
+    print("  - output/events.csv         (in/out and zone enter/exit events)")
     print("\nNote: detection counts on this synthetic footage are just a")
     print("pipeline smoke test — real store CCTV footage of actual people")
     print("will give the YOLO model far more to work with.")

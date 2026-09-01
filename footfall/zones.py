@@ -28,7 +28,7 @@ import os
 
 import cv2
 
-ZONES_FILE = "zones.json"
+from . import ZONES_FILE
 
 LINE_COLOR = (0, 255, 255)
 ZONE_COLOR = (255, 128, 0)
@@ -199,9 +199,10 @@ def grab_frame(source, capture_size=None):
     return frame
 
 
-def load_zones(path=ZONES_FILE):
+def load_zones(path=None):
     """Returns (line, zone, size, ignore_regions)."""
-    from footfall_tracker import Point
+    from .tracker import Point
+    path = str(path or ZONES_FILE)
     if not os.path.exists(path):
         return None, None, None, None
     with open(path) as f:
@@ -226,14 +227,14 @@ def main():
     ap = argparse.ArgumentParser(description="Draw the entrance line and queue zone")
     ap.add_argument("--source", default="0", help="camera index, video path, or RTSP URL")
     ap.add_argument("--review", action="store_true", help="load zones.json and show it")
-    ap.add_argument("--out", default=ZONES_FILE)
+    ap.add_argument("--out", default=str(ZONES_FILE))
     ap.add_argument("--res", default="max",
                     help="capture mode: max (default), native, or WxH — must match run_webcam.py")
     args = ap.parse_args()
 
     capture_size = None
     if args.res == "max" and str(args.source).isdigit():
-        from footfall_tracker import max_capture_size
+        from .tracker import max_capture_size
         capture_size = max_capture_size(int(args.source))
     elif args.res not in ("max", "native"):
         w_s, h_s = args.res.lower().split("x")

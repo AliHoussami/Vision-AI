@@ -20,6 +20,13 @@ ONE id. Getting 6 means the tracker dropped the lock 5 times.
 """
 
 import argparse
+import sys
+from pathlib import Path
+
+# Allow running this file directly (python tools/xxx.py) by putting the
+# project root on sys.path before importing the package.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import os
 import time
 from collections import defaultdict
@@ -27,7 +34,9 @@ from collections import defaultdict
 import cv2
 from ultralytics import YOLO
 
-CLIP = "tracker_test.mp4"
+from footfall import DEFAULT_TRACKER, output, resolve_model
+
+CLIP = output("tracker_test.mp4")
 
 
 
@@ -35,8 +44,8 @@ def _load_ignore():
     """Exclusion regions from zones.json, so measurements match what
     run_webcam.py actually counts."""
     try:
-        from define_zones import load_zones
-        from footfall_tracker import _point_in_polygon, Point
+        from footfall import load_zones
+        from footfall.tracker import _point_in_polygon, Point
         _, _, _, ignore = load_zones()
         if not ignore:
             return None
@@ -99,7 +108,7 @@ def record(camera, seconds, size=(1280, 720)):
 
 def evaluate(model_path, tracker, imgsz, conf, device):
     """Replay the clip and summarise how well identities held together."""
-    model = YOLO(model_path)
+    model = YOLO(resolve_model(model_path))
     ignored = _load_ignore()
     seen = defaultdict(int)        # track id -> frames it appeared in
     first, last = {}, {}
@@ -158,7 +167,7 @@ def diagnose(model_path, tracker, imgsz, conf, device, out_video=None):
     is just the person walking out and back in - correct behaviour. So we
     separate the two rather than tuning against a number that mixes them.
     """
-    model = YOLO(model_path)
+    model = YOLO(resolve_model(model_path))
     ignored = _load_ignore()
     tracks = defaultdict(list)     # id -> [(frame, cx, cy)]
     meta = defaultdict(list)       # id -> [(conf, box_h, box_w)]
@@ -292,7 +301,8 @@ def main():
     ap.add_argument("--imgsz", type=int, default=None)
     ap.add_argument("--conf", type=float, default=0.35)
     ap.add_argument("--device", default=None)
-    ap.add_argument("--trackers", default="bytetrack.yaml,botsort.yaml,tracker_people.yaml")
+    ap.add_argument("--trackers",
+                    default="bytetrack.yaml,botsort.yaml," + str(DEFAULT_TRACKER))
     ap.add_argument("--diagnose", default=None,
                     help="explain where ids break for one tracker, e.g. tracker_people.yaml")
     ap.add_argument("--sweep", default=None,
@@ -319,7 +329,7 @@ def main():
 
     if args.sweep:
         vals = [float(x) for x in args.sweep.split(',') if x.strip()]
-        tk = args.diagnose or 'tracker_people.yaml'
+        tk = args.diagnose or str(DEFAULT_TRACKER)
         sweep(args.model, tk, args.imgsz, args.device, vals, args.people)
         return
 

@@ -20,11 +20,17 @@ Run:
 """
 
 import argparse
+import sys
+from pathlib import Path
+
+# Allow running this file directly (python tools/xxx.py) by putting the
+# project root on sys.path before importing the package.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 
 import cv2
 
-from define_zones import load_zones
-from footfall_tracker import FootfallTracker, Point, max_capture_size
+from footfall import FootfallTracker, Point, load_zones, max_capture_size, output
 
 
 def probe(index: int):
@@ -111,7 +117,7 @@ def main():
     ap.add_argument("--imgsz", type=int, default=None,
                     help="inference resolution; raise to detect smaller/distant people "
                          "(default: 960 on GPU, 640 on CPU)")
-    ap.add_argument("--tracker", default="tracker_people.yaml",
+    ap.add_argument("--tracker", default=None,
                     help="tracker config (tracker_people.yaml, botsort.yaml, bytetrack.yaml)")
     ap.add_argument("--device", default=None, help="cuda device e.g. 0, or cpu")
     ap.add_argument("--min-height", type=int, default=0,
@@ -195,8 +201,8 @@ def main():
         line=line,
         zone=zone,
         conf=args.conf,
-        output_video=None if args.no_record else "webcam_annotated.mp4",
-        events_csv="webcam_events.csv",
+        output_video=None if args.no_record else output("webcam_annotated.mp4"),
+        events_csv=output("webcam_events.csv"),
         max_frames=max_frames,
         preview=not args.no_preview,
         display_scale=args.scale,
@@ -226,8 +232,8 @@ def main():
         print(f"   {k}: {v}")
     print("\nOutputs:")
     if not args.no_record:
-        print("  - webcam_annotated.mp4")
-    print("  - webcam_events.csv")
+        print("  - output/webcam_annotated.mp4")
+    print("  - output/webcam_events.csv")
 
 
 if __name__ == "__main__":

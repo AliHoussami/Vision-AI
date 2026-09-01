@@ -8,17 +8,30 @@ hardware needed if a site already has cameras.
 No facial recognition and no identity storage: only anonymous detection plus
 tracking IDs that reset each run.
 
-## Files
+## Layout
 
-| File | Purpose |
-|---|---|
-| `footfall_tracker.py` | Core pipeline: detection, tracking, line crossing, zone dwell, CSV log |
-| `define_zones.py` | Click the entrance line, queue zone, and exclusion regions onto a real frame |
-| `run_webcam.py` | Run the pipeline against a local/USB/phone camera |
-| `run_demo.py` | Self-contained smoke test on a generated synthetic clip |
-| `compare_trackers.py` | Record a clip and measure which tracker config holds IDs best |
-| `get_rtsp_url.py` | ONVIF helper to discover an IP camera's RTSP URL |
-| `tracker_people.yaml` | Tracker settings, with measured notes on what did and did not work |
+```
+footfall/            importable package - the pipeline itself
+  tracker.py         detection, tracking, line crossing, zone dwell, CSV log
+  zones.py           geometry editor and zones.json loader
+  __init__.py        path resolution, so tools work from any directory
+tools/               command-line entry points
+  run_webcam.py      run against a local / USB / phone camera
+  define_zones.py    draw line, zone, and ignore regions onto a real frame
+  run_demo.py        synthetic smoke test, no camera needed
+  compare_trackers.py  record a clip and score tracker configs on it
+  get_rtsp_url.py    ONVIF stream URL discovery
+config/
+  tracker_people.yaml  tracker settings, annotated with what was measured
+  zones.example.json   documents the geometry file format
+models/              downloaded YOLO weights        (gitignored)
+output/              recordings, event logs, clips  (gitignored)
+zones.json           your camera's geometry         (gitignored)
+```
+
+Both `models/` and `output/` are created on first use. Paths resolve against
+the project root, not the working directory, so the tools behave identically
+wherever you invoke them from.
 
 ## Install
 
@@ -48,22 +61,22 @@ Model weights download automatically on first run.
 
 ```bash
 # 1. Confirm the pipeline runs end to end (no camera needed)
-python run_demo.py
+python tools/run_demo.py
 
 # 2. Find your camera. OpenCV exposes only numeric indices, so this
 #    shows each one live with its index labelled on the frame.
-python run_webcam.py --identify
+python tools/run_webcam.py --identify
 
 # 3. Draw the geometry onto a real frame from that camera
-python define_zones.py --source 0
+python tools/define_zones.py --source 0
 
 # 4. Run it
-python run_webcam.py --camera 0
+python tools/run_webcam.py --camera 0
 ```
 
 ## Drawing the geometry
 
-`define_zones.py` writes `zones.json`. Three things can be drawn:
+`tools/define_zones.py` writes `zones.json`. Three things can be drawn:
 
 - **Line** (`L`, 2 clicks) — the entrance. A tracked person crossing it counts
   as in or out. The click order sets which direction is "in"; an arrow labelled
@@ -87,21 +100,21 @@ Defaults follow the hardware: `yolov8s` at 960 on a GPU, `yolov8n` at 640 on
 a CPU.
 
 ```bash
-python run_webcam.py --camera 0 --model yolo11m.pt --imgsz 1280 --conf 0.50
+python tools/run_webcam.py --camera 0 --model yolo11m.pt --imgsz 1280 --conf 0.50
 ```
 
 Do not guess at these — measure them. `compare_trackers.py` records one clip
 and replays it through each config, so the comparison is like for like:
 
 ```bash
-python compare_trackers.py --record 30 --camera 0 --people 2   # capture + score
-python compare_trackers.py --diagnose tracker_people.yaml      # where IDs break
-python compare_trackers.py --sweep "0.35,0.50,0.60"            # threshold sweep
+python tools/compare_trackers.py --record 30 --camera 0 --people 2   # capture + score
+python tools/compare_trackers.py --diagnose config/tracker_people.yaml  # where IDs break
+python tools/compare_trackers.py --sweep "0.35,0.50,0.60"            # threshold sweep
 ```
 
 `ids/person` is the headline: 1.0 means the identity was never lost.
 
-Findings from that harness are recorded in `tracker_people.yaml`, including
+Findings from that harness are recorded in `config/tracker_people.yaml`, including
 two settings that turned out **not** to work — ultralytics' built-in ReID with
 `model: auto` does nothing, and `track_buffer` had no measurable effect from 3
 to 900. Re-measure on your own footage before trusting either.
@@ -111,7 +124,7 @@ to 900. Re-measure on your own footage before trusting either.
 Find the RTSP URL via ONVIF:
 
 ```bash
-python get_rtsp_url.py --ip 192.168.1.50 --user admin --password ****
+python tools/get_rtsp_url.py --ip 192.168.1.50 --user admin --password ****
 ```
 
 Or use the vendor pattern:
@@ -122,13 +135,13 @@ Or use the vendor pattern:
 Then:
 
 ```python
-from footfall_tracker import FootfallTracker, Point
+from footfall import FootfallTracker, Point, output
 
 tracker = FootfallTracker(
     source="rtsp://admin:pass@192.168.1.50:554/Streaming/Channels/101",
     line=(Point(100, 400), Point(900, 400)),
     zone=[Point(300, 300), Point(700, 300), Point(700, 550), Point(300, 550)],
-    events_csv="events.csv",
+    events_csv=output("events.csv"),
 )
 print(tracker.run())
 ```
@@ -139,7 +152,7 @@ occlusion, and the box centroid lands nearer the person's floor position.
 
 ## Output
 
-`events.csv` — one row per event, mapping directly onto a
+`output/events.csv` — one row per event, mapping directly onto a
 `events(timestamp, event_type, track_id, value)` SQL table:
 
 ```

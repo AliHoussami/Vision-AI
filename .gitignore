@@ -6,19 +6,19 @@ __pycache__/
 # --- Model weights (auto-downloaded on first run, ~140MB) ---
 # Ultralytics fetches these itself; committing them bloats the repo
 # and they are not ours to redistribute.
+models/
 *.pt
 
-# --- Video in/out (~128MB here) ---
-# Everything the pipeline reads or writes. Regenerate with run_demo.py
-# or compare_trackers.py --record.
+# --- Generated artifacts ---
+# Everything the pipeline writes goes to output/: recordings, event logs,
+# diagnostic clips. Regenerate with run_demo.py or compare_trackers.py.
+output/
+
+# Stray media left at the root by older runs
 *.mp4
 *.avi
 *.mkv
-
-# --- Event logs and analysis output ---
-events.csv
-webcam_events.csv
-demo_events.csv
+*.csv
 
 # --- Per-camera configuration ---
 # zones.json holds pixel coordinates for ONE physical camera at ONE

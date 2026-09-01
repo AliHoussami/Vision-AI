@@ -108,7 +108,7 @@ class FootfallTracker:
         geometry_size: Optional[Tuple[int, int]] = None,
         imgsz: int = 640,
         iou: float = 0.5,
-        tracker: str = "bytetrack.yaml",
+        tracker: Optional[str] = None,
         device: Optional[str] = None,
         min_box_height: int = 0,
         max_aspect: Optional[float] = None,
@@ -130,6 +130,11 @@ class FootfallTracker:
         self._geometry_fitted = False
         self.imgsz = imgsz
         self.iou = iou
+        # default to the repo's tuned config, resolved absolutely so it
+        # works regardless of the working directory
+        if tracker is None:
+            from . import DEFAULT_TRACKER
+            tracker = str(DEFAULT_TRACKER)
         self.tracker = tracker
         self.device = device
         # geometry sanity filters -- cheap defence against non-person boxes
@@ -142,7 +147,9 @@ class FootfallTracker:
         self.ignored_detections = 0
         self._preview_window = "Footfall Tracker - press Q to stop"
 
-        self.model = YOLO(model_path)
+        from . import resolve_model
+
+        self.model = YOLO(resolve_model(model_path))
 
         # track_id -> last known side of the line (float sign)
         self._last_side = {}
