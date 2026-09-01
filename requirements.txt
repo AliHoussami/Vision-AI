@@ -1,0 +1,20 @@
+# Core pipeline
+ultralytics>=8.3.0
+opencv-python>=4.9.0      # full build, not headless: define_zones.py and the
+                          # live preview need cv2.imshow
+lap>=0.5.12               # ByteTrack/BoT-SORT association solver
+numpy>=1.26.0
+
+# IP camera discovery (only needed for get_rtsp_url.py)
+onvif-zeep>=0.2.12
+
+# NOTE ON PYTORCH
+# ultralytics pulls in the default torch wheel, which on most machines is
+# CPU-only. If you have an NVIDIA GPU, install the CUDA build explicitly
+# after this file:
+#
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+#
+# This matters more than any tracker setting: on CPU the pipeline ran at
+# ~2 fps, and at that rate a walking person moves too far between frames
+# for the tracker to associate them, so identities break constantly.

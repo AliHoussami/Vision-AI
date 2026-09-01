@@ -1,0 +1,16 @@
+# Normalise line endings so Windows and Linux checkouts do not show the
+# whole file as changed. Text files are stored LF in the repo and checked
+# out with the platform's native ending.
+* text=auto
+
+*.py   text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+*.md   text eol=lf
+*.txt  text eol=lf
+
+# Never touch binaries
+*.pt  binary
+*.mp4 binary
+*.png binary
+*.jpg binary

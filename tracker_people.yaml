@@ -1,0 +1,41 @@
+# BoT-SORT tuned for people in a fixed, elevated CCTV view.
+#
+# Every value here was A/B tested on a recorded clip with
+# compare_trackers.py rather than copied from a tutorial. Notes record
+# what was MEASURED, including the settings that turned out not to work.
+
+tracker_type: botsort
+
+# --- what actually helped ---
+# This was the single effective change: 0.25 -> 0.55 took the clip from
+# 9 ids to 6, and later from 6 to 4. A detection must be clearly confident
+# before it may START a new identity, which stops junk tracks appearing.
+new_track_thresh: 0.55
+track_high_thresh: 0.35
+track_low_thresh: 0.1
+
+# --- measured to have NO effect on this footage ---
+# Tested at 3, 30, 90, 120, 400 and 900: byte-identical results every time.
+# Once a track has been unobserved for ~3s its Kalman prediction has drifted
+# so far that re-association fails on IoU regardless of whether the track is
+# still alive. A bigger buffer keeps a corpse warm; it does not re-match it.
+track_buffer: 90
+
+match_thresh: 0.85
+fuse_score: True
+
+# Camera is fixed, so global motion compensation is wasted compute.
+# Measured ~40% faster with this off. Set to sparseOptFlow if it ever moves.
+gmc_method: none
+
+# --- ReID: OFF, deliberately ---
+# with_reid: True + model: auto is INERT. "auto" does not load a ReID network
+# at all; it expects pre-extracted backbone features the predictor never
+# supplies. Measured identical to with_reid: False (4 ids, 437 median).
+# Supplying a real encoder (yolo11n-cls.pt) made it WORSE - 6 ids, 264 median -
+# because classification embeddings are not discriminative for person identity.
+# Turning this on requires a purpose-built person-ReID model, not any model.
+with_reid: False
+model: auto
+proximity_thresh: 0.5
+appearance_thresh: 0.8

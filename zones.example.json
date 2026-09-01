@@ -1,0 +1,23 @@
+{
+  "_comment": [
+    "Example geometry file. The real one (zones.json) is gitignored because",
+    "these are pixel coordinates for ONE camera at ONE resolution and mean",
+    "nothing on another setup. Generate yours with:",
+    "    python define_zones.py --source 0",
+    "",
+    "width/height record the frame the coordinates were drawn on. If the live",
+    "frame differs, FootfallTracker rescales the geometry to match.",
+    "",
+    "line   : 2 points, the entrance. Click order sets which way counts as IN.",
+    "zone   : polygon, the queue area, timed as dwell.",
+    "ignore : list of polygons where detections are discarded entirely -",
+    "         mirrors, screens, posters, windows onto a street."
+  ],
+  "width": 1280,
+  "height": 720,
+  "line": [[640, 60], [640, 700]],
+  "zone": [[180, 300], [560, 300], [560, 660], [180, 660]],
+  "ignore": [
+    [[900, 40], [1240, 40], [1240, 320], [900, 320]]
+  ]
+}
