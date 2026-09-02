@@ -48,6 +48,8 @@ def output(name: str) -> str:
     return str(OUTPUT_DIR / name)
 
 
+from .storage import (CsvEventSink, EventSink, NullSink,  # noqa: E402
+                      SqliteEventSink, new_run_id)
 from .tracker import FootfallTracker, Point, max_capture_size  # noqa: E402
 from .zones import load_zones  # noqa: E402
 
@@ -64,4 +66,9 @@ __all__ = [
     "OUTPUT_DIR",
     "ZONES_FILE",
     "DEFAULT_TRACKER",
+    "EventSink",
+    "SqliteEventSink",
+    "CsvEventSink",
+    "NullSink",
+    "new_run_id",
 ]

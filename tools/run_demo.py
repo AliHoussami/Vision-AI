@@ -5,7 +5,7 @@ Self-contained smoke test: generates a short synthetic video (moving
 person-shaped silhouettes walking across an entrance line and lingering
 in a queue zone), then runs FootfallTracker on it end-to-end, proving
 the full pipeline (detection -> tracking -> line-crossing -> zone dwell
--> CSV logging -> annotated video output) runs without errors.
+-> SQLite event logging -> annotated video output) runs without errors.
 
 Swap `source=` for a real RTSP URL or a real video file to use on an
 actual store camera — nothing else in FootfallTracker needs to change.
@@ -94,7 +94,7 @@ def main():
             Point(WIDTH * 0.35, HEIGHT * 0.85),
         ],
         output_video=output("annotated_out.mp4"),
-        events_csv=output("events.csv"),
+        events_db=output("events.db"),
         conf=0.15,  # low threshold since synthetic silhouettes are crude
     )
     summary = tracker.run()
@@ -105,7 +105,7 @@ def main():
 
     print("\nOutputs:")
     print("  - output/annotated_out.mp4  (boxes/line/zone overlay)")
-    print("  - output/events.csv         (in/out and zone enter/exit events)")
+    print("  - output/events.db          (SQLite; see tools/events_db.py)")
     print("\nNote: detection counts on this synthetic footage are just a")
     print("pipeline smoke test — real store CCTV footage of actual people")
     print("will give the YOLO model far more to work with.")

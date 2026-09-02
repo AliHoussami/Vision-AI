@@ -202,7 +202,7 @@ def main():
         zone=zone,
         conf=args.conf,
         output_video=None if args.no_record else output("webcam_annotated.mp4"),
-        events_csv=output("webcam_events.csv"),
+        events_db=output("events.db"),
         max_frames=max_frames,
         preview=not args.no_preview,
         display_scale=args.scale,
@@ -233,7 +233,7 @@ def main():
     print("\nOutputs:")
     if not args.no_record:
         print("  - output/webcam_annotated.mp4")
-    print("  - output/webcam_events.csv")
+    print("  - output/events.db  (SQLite; see tools/events_db.py)")
 
 
 if __name__ == "__main__":

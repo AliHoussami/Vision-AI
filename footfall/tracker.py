@@ -8,7 +8,7 @@ that OpenCV can open — a file, a webcam index, or an RTSP/ONVIF camera URL.
 Pipeline:
     video source -> YOLOv8 person detection -> ByteTrack (persistent IDs)
     -> line-crossing counter (in/out) -> polygon zone dwell-time tracker
-    -> CSV event log + annotated output video
+    -> event store (SQLite) + annotated output video
 
 Usage (see run_demo.py for a runnable example):
 
@@ -19,13 +19,12 @@ Usage (see run_demo.py for a runnable example):
         line=(Point(100, 400), Point(900, 400)),   # entrance line
         zone=[Point(300, 300), Point(700, 300), Point(700, 550), Point(300, 550)],  # queue area
         output_video="annotated_out.mp4",
-        events_csv="events.csv",
+        events_db="events.db",
     )
     summary = tracker.run()
     print(summary)
 """
 
-import csv
 import time
 from collections import defaultdict
 from dataclasses import dataclass
@@ -37,6 +36,7 @@ from ultralytics import YOLO
 
 from .capture import ReconnectingCapture
 from .pipeline import ThreadedFrameSource
+from .storage import CsvEventSink, EventSink, NullSink, SqliteEventSink
 
 
 @dataclass
@@ -104,6 +104,10 @@ class FootfallTracker:
         conf: float = 0.35,
         output_video: Optional[str] = None,
         events_csv: Optional[str] = None,
+        events_db: Optional[str] = None,
+        event_sink: Optional[EventSink] = None,
+        site: Optional[str] = None,
+        tz: Optional[str] = None,
         max_frames: Optional[int] = None,
         display_scale: float = 1.0,
         preview: bool = False,
@@ -133,6 +137,7 @@ class FootfallTracker:
         self.person_class_id = person_class_id
         self.output_video = output_video
         self.events_csv = events_csv
+        self.events_db = events_db
         self.max_frames = max_frames
         self.display_scale = display_scale
         self.preview = preview
@@ -200,16 +205,22 @@ class FootfallTracker:
         # per-minute bucket -> count of "in" events, for peak-hour analysis
         self._in_by_minute = defaultdict(int)
 
-        self._csv_writer = None
-        self._csv_file = None
-        if self.events_csv:
-            self._csv_file = open(self.events_csv, "w", newline="")
-            self._csv_writer = csv.writer(self._csv_file)
-            self._csv_writer.writerow(["timestamp", "event", "track_id", "value"])
+        # Event store. Prefer an injected sink, then a SQLite file, then the
+        # legacy CSV, else discard. The sink owns run_id, UTC timestamps,
+        # and idempotency -- see footfall/storage.py.
+        if event_sink is not None:
+            self._sink = event_sink
+        elif events_db:
+            self._sink = SqliteEventSink(events_db, source=str(source),
+                                         site=site, tz=tz)
+        elif events_csv:
+            self._sink = CsvEventSink(events_csv)
+        else:
+            self._sink = NullSink()
+        self.run_id = self._sink.run_id
 
     def _log_event(self, event: str, track_id: int, value=""):
-        if self._csv_writer:
-            self._csv_writer.writerow([datetime.now().isoformat(timespec="seconds"), event, track_id, value])
+        self._sink.emit(event, track_id, value if value != "" else None)
 
     def _centroid(self, box) -> Point:
         x1, y1, x2, y2 = box
@@ -426,7 +437,7 @@ class FootfallTracker:
         except KeyboardInterrupt:
             print("[interrupted] flushing outputs...")
         finally:
-            # close out still-open dwell sessions BEFORE the CSV closes,
+            # close out still-open dwell sessions BEFORE the sink closes,
             # so a Ctrl+C on a live camera still leaves usable output
             for track_id, entered_at in self._zone_entry_time.items():
                 dwell = time.time() - entered_at
@@ -435,8 +446,7 @@ class FootfallTracker:
             self._zone_entry_time.clear()
             if cap_writer:
                 cap_writer.release()
-            if self._csv_file:
-                self._csv_file.close()
+            self._sink.close()
             if self.preview:
                 cv2.destroyAllWindows()
 
@@ -446,6 +456,8 @@ class FootfallTracker:
         peak_minute = max(self._in_by_minute.items(), key=lambda kv: kv[1], default=(None, 0))
 
         return {
+            "run_id": self.run_id,
+            "events_logged": getattr(self._sink, "count", None),
             "frames_processed": frame_idx,
             "processing_seconds": round(elapsed, 1),
             "footfall_in": self.count_in,

@@ -14,11 +14,15 @@ models/
 # diagnostic clips. Regenerate with run_demo.py or compare_trackers.py.
 output/
 
-# Stray media left at the root by older runs
+# Stray media / data left at the root by older runs
 *.mp4
 *.avi
 *.mkv
 *.csv
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
 
 # --- Per-camera configuration ---
 # zones.json holds pixel coordinates for ONE physical camera at ONE
