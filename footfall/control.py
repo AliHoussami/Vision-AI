@@ -44,8 +44,14 @@ def _points(seq):
 
 
 class LiveControls:
-    """Owns the lock between the run loop and the control API, and the
-    whitelist of what may change while running."""
+    """The whitelist of what may change on a running tracker, plus a lock
+    that serialises concurrent control-API requests.
+
+    The run loop reads settings without taking this lock -- scalar
+    assignments and list/tuple rebinds are atomic in CPython, so it always
+    sees a coherent old-or-new value and picks a change up within a frame
+    or two. It is not a barrier against the run loop.
+    """
 
     def __init__(self, owner):
         self._owner = owner
@@ -96,10 +102,14 @@ class LiveControls:
         return {"applied": applied, "rejected": rejected}
 
     def set_geometry(self, line=None, zone=None, ignore=None, size=None) -> dict:
+        """Replace geometry on the running tracker. Coordinates are taken
+        as live-frame pixels: pass `size` only if they were authored at a
+        different resolution and should be rescaled to the frame."""
         from .tracker import Point
 
         with self._lock:
             o = self._owner
+            replacing = any(v is not None for v in (line, zone, ignore))
             if line is not None:
                 o.line = ((Point(*line[0]), Point(*line[1])) if line else None)
             if zone is not None:
@@ -109,6 +119,10 @@ class LiveControls:
                                   for poly in ignore]
             if size is not None:
                 o.geometry_size = (int(size[0]), int(size[1]))
+            elif replacing:
+                # new coords are in the live frame's pixels -- drop any
+                # authored size so _fit_geometry does not rescale them
+                o.geometry_size = None
             # force _fit_geometry to re-run against the next live frame
             o._geometry_fitted = False
         return self.snapshot()["geometry"]

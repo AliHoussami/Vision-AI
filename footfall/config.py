@@ -164,9 +164,10 @@ def _parse_camera(raw, index: int, defaults: dict, base: Path,
     if raw.get("resolution") is not None:
         r = raw["resolution"]
         if (not isinstance(r, (list, tuple)) or len(r) != 2
-                or not all(isinstance(x, int) for x in r)):
+                or not all(isinstance(x, int) and x > 0 for x in r)):
             raise ConfigError(
-                f"camera {cam_id!r}: 'resolution' must be [width, height] ints")
+                f"camera {cam_id!r}: 'resolution' must be [width, height] "
+                f"positive ints")
         resolution = (int(r[0]), int(r[1]))
 
     zones_path = _resolve_path(raw["zones"], base) if raw.get("zones") else None

@@ -105,6 +105,19 @@ def test_set_geometry_leaves_unpassed_fields_alone():
     assert [[p.x, p.y] for p in t.line] == [[9, 9], [8, 8]]
 
 
+def test_set_geometry_without_size_clears_authored_size():
+    t = FakeTracker()
+    t.geometry_size = (1280, 720)                 # from a config
+    t._controls.set_geometry(line=[[1, 1], [2, 2]])   # live-frame pixels
+    assert t.geometry_size is None                # so _fit_geometry won't rescale
+
+
+def test_set_geometry_with_size_keeps_it_for_rescaling():
+    t = FakeTracker()
+    t._controls.set_geometry(zone=[[0, 0], [4, 0], [4, 4]], size=[640, 480])
+    assert t.geometry_size == (640, 480)
+
+
 def test_snapshot_shape():
     snap = FakeTracker()._controls.snapshot()
     assert snap["run_id"] == "run-xyz"

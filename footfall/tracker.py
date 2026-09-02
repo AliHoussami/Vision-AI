@@ -455,9 +455,17 @@ class FootfallTracker:
                     if self.display_scale != 1.0:
                         disp = cv2.resize(frame, None, fx=self.display_scale,
                                           fy=self.display_scale)
-                    cv2.imshow(self._preview_window, disp)
-                    # waitKey is what actually paints the window; Q or ESC quits
-                    if (cv2.waitKey(1) & 0xFF) in (ord("q"), 27):
+                    try:
+                        cv2.imshow(self._preview_window, disp)
+                        # waitKey paints the window; Q or ESC quits
+                        key = cv2.waitKey(1) & 0xFF
+                    except cv2.error as exc:
+                        # no display (headless box, preview toggled on via
+                        # the control API): disable it, keep counting
+                        _log.warning("preview disabled: %s", exc)
+                        self.preview = False
+                        key = 255
+                    if key in (ord("q"), 27):
                         _log.info("preview stop requested")
                         break
 

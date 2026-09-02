@@ -125,7 +125,10 @@ class SqliteEventSink(EventSink):
         parent = os.path.dirname(self.path)
         if parent:
             os.makedirs(parent, exist_ok=True)
-        self._conn = sqlite3.connect(self.path)
+        # emit()/close() are only ever called from one thread at a time,
+        # but not necessarily the thread that built the sink (run_site.py
+        # --all builds and runs each camera on its own thread)
+        self._conn = sqlite3.connect(self.path, check_same_thread=False)
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.executescript(_SCHEMA)
         self._conn.execute(

@@ -76,9 +76,13 @@ video leaves the site, and there is a dashboard and a support process behind
 it. This section is an honest account of the distance between the current code
 and that bar.
 
-### Where the prototype stands today
+### Where the prototype stood at the start of this roadmap
 
-| Area | What exists now |
+Baseline snapshot. **Phase 1 is now complete** — the Ingestion, Output,
+Runtime, Ops and Security rows below have all been addressed; see the
+Phase 1 section for what shipped.
+
+| Area | What existed at the start |
 |---|---|
 | Ingestion | Opens one source (file / USB / RTSP) via OpenCV. A single dropped frame ends the run — no reconnect. |
 | Detection & tracking | YOLOv8n/s + ByteTrack/BoT-SORT, one frame at a time. Tracker config A/B-tested on one clip (`tracker_people.yaml`). |
@@ -90,6 +94,10 @@ and that bar.
 | Security | Camera credentials passed as CLI args / embedded in RTSP URLs. |
 
 ### Known technical debt to clear early
+
+Phase 1 cleared the last three of these (event store, staged capture,
+stream resilience). The first three are counting-accuracy issues owned by
+Phase 2.
 
 - **Dwell time fragments on ID switches.** A lost lock inside a zone closes one
   dwell session and opens another, so average dwell under-reports. The fix is
@@ -110,58 +118,89 @@ and that bar.
 - **No stream resilience.** Cameras drop, reboot, and change IP; the pipeline
   must reconnect with backoff and report the outage, not exit.
 
-### Phase 1 — A reliable single-camera service
+### Phase 1 — A reliable single-camera service — ✅ complete
 
 Goal: the current pipeline, but as a service that runs for weeks unattended
 and writes to a real database.
 
-- Resilient RTSP ingestion: reconnect with backoff, watchdog on frame
-  staleness, hardware-accelerated decode where available.
-- Split the pipeline into stages (capture → inference → tracking → event
-  logic) with bounded queues, so a slow stage drops frames instead of
-  stalling.
-- Replace CSV with an event store behind a small `EventSink` interface:
-  append-only, timezone-aware (UTC + site zone), idempotent writes keyed on
-  `(run_id, event, track_id, monotonic index)`, per-run `run_id`, and a
-  one-command reset for local testing. **Implementation now: SQLite** — a
-  single file, so a clean slate is still just deleting it, but with a real
-  schema and queryable history. Postgres + TimescaleDB is a later, drop-in
-  second implementation of the same interface (see Phase 3), added when
-  there are real sites and a central store, retention policies, and a
-  store-and-forward disk buffer start to matter.
-- Configuration as a file instead of CLI flags: one YAML per site — name,
-  timezone, a shared `defaults` block, and a list of cameras (source,
-  resolution, zones file, per-camera overrides). `footfall/config.py` +
-  `tools/run_site.py`.
-- A small `localhost` control API on a running tracker (`footfall/control.py`,
-  `control_port` in the config): `GET /status` and `/config`, `PATCH
-  /config` to retune detection thresholds live, `PUT /geometry` to redraw
-  the line / zone / ignore regions — all without restarting. Model, imgsz
-  and source are rejected as restart-only. Localhost bind is the only
-  boundary for now; real auth is Phase 5. This is the seed of Phase 3
-  fleet management and Phase 4 onboarding.
-- Secrets handling (`footfall/secrets.py`): a camera `source` carries a
-  `${SECRET:name}` / `${ENV:name}` placeholder, resolved at config load
-  from an env var, the OS keyring, or a gitignored `config/secrets.yaml`.
-  `redact()` masks credentials everywhere a source is printed, stored in
-  the event DB, or shown by `--print`; only `cv2.VideoCapture` ever sees
-  the real URL. `get_rtsp_url.py` prompts for the password instead of
-  taking it on the command line.
-- Packaging: `Dockerfile` + `docker-compose.yml` (`restart: unless-stopped`,
-  config mounted read-only, models/output as named volumes) and a systemd
-  unit in `deploy/` with a crash-loop backoff. Library modules log through
-  `logging.getLogger("footfall.*")`; `footfall/logsetup.py` `configure()`
-  emits line-delimited JSON (ts, level, logger, msg, extras, exception) by
-  default, `FOOTFALL_LOG_FORMAT=text` for a console. The `requirements.txt`
-  numpy/opencv pins are fixed so a clean install resolves.
-- Test suite (124 tests): `test_geometry.py` covers `_side_of_line`,
-  `_point_in_polygon`, the line-crossing state machine, zone dwell,
-  `_fit_geometry` rescaling and the box sanity filter (a `model=` hook
-  skips the YOLO load); `test_regression.py` drives `FootfallTracker.run()`
-  end to end with a scripted fake detector over a generated clip and
-  asserts exact counts and the event stream. `.github/workflows/ci.yml`
-  runs `pytest` on every push and PR. A real-footage accuracy benchmark is
-  Phase 2.
+Delivered (branch `ayman-test-work`, 12 commits):
+
+1. **Resilient ingestion** — `footfall/capture.py::ReconnectingCapture`.
+   Exponential-backoff reconnect (1s → ×2 → 30s cap, infinite by default;
+   a file that will not open fails fast). A watchdog thread force-
+   reconnects a stream that stays open but stops delivering new frames, or
+   repeats one — a frozen decoder is caught by a byte-identical strided
+   subsample check. `hw_accel: auto` requests NVDEC / VideoToolbox / VAAPI
+   / D3D11 via `CAP_PROP_HW_ACCELERATION` with automatic software fallback;
+   a GStreamer pipeline string opens on that backend (the Jetson path). The
+   run summary carries `reconnects`, `stale_trips`, `hw_decode`.
+2. **Staged capture** — `footfall/pipeline.py::ThreadedFrameSource`.
+   Capture runs on its own daemon thread feeding a bounded queue. A live
+   source drops the oldest frame under backpressure (counted as
+   `dropped_frames`) so processing stays near real time; a file source
+   blocks so every frame is processed and counts stay exact.
+3. **Event store** — `footfall/storage.py`. An `EventSink` interface plus
+   `SqliteEventSink` (append-only `runs` / `events` tables, per-run
+   `run_id`, monotonic `seq`, UTC timestamps, optional site / IANA tz;
+   idempotent on `(run_id, seq)` for a later store-and-forward replay),
+   `CsvEventSink` (legacy, now append-only), `NullSink`.
+   `tools/events_db.py` gives `runs` / `drop-run <id>` / `reset`. Postgres
+   + TimescaleDB is the same interface again in Phase 3.
+4. **Config file** — `footfall/config.py` + `tools/run_site.py`. One YAML
+   per site: metadata, a shared `defaults` block, a per-camera list with
+   overrides; unknown-key and missing-field validation; project-root-
+   relative paths. `run_site.py config/site.yaml [--camera <id> | --all |
+   --print]`. The old flag tools still work; `run_site.py` is the way in.
+5. **Local control API** — `footfall/control.py`. A `127.0.0.1`
+   `ThreadingHTTPServer` on `control_port`: `GET /healthz` `/status`
+   `/config`, `PATCH /config` to retune `conf` / `iou` / the box filters
+   live, `PUT /geometry` to redraw the line / zone / ignore regions —
+   without a restart. `model` / `imgsz` / `source` are rejected as
+   restart-only. Localhost bind is the only boundary; auth is Phase 5.
+6. **Secrets** — `footfall/secrets.py`. A camera `source` carries a
+   `${SECRET:name}` / `${ENV:name}` placeholder resolved at load from an
+   env var → the OS keyring → a gitignored `config/secrets.yaml`; a
+   missing secret raises at startup. `redact()` masks credentials in every
+   log line, the event DB's `source` column, and `--print`; only
+   `cv2.VideoCapture` sees the real URL. `get_rtsp_url.py` prompts for the
+   password instead of taking it on the command line.
+7. **Packaging & ops** — library modules log through
+   `logging.getLogger("footfall.*")`; `footfall/logsetup.py::configure()`
+   emits line-delimited JSON (ts, level, logger, msg, `extra=` fields,
+   exception) by default, `FOOTFALL_LOG_FORMAT=text` for a console.
+   `Dockerfile` + `docker-compose.yml` (`restart: unless-stopped`,
+   read-only config mount, named volumes for `models/` and `output/`) and
+   `deploy/footfall.service` (systemd, `Restart=always` with a crash-loop
+   limit) + `deploy/README.md`. `requirements.txt` numpy/opencv pins fixed
+   so a fresh install resolves.
+8. **Tests & CI** — 126 tests across `test_geometry`, `test_regression`
+   (a scripted fake detector drives `FootfallTracker.run()` end to end and
+   asserts exact counts + the event stream), `test_reconnect`,
+   `test_watchdog`, `test_pipeline`, `test_hwdecode`, `test_storage`,
+   `test_config`, `test_control`, `test_secrets`, `test_logsetup`. A
+   `model=` constructor hook skips the YOLO load so the counting geometry
+   is unit-testable in milliseconds. `.github/workflows/ci.yml` runs
+   `pytest` on every push and PR.
+
+**Audit (post-implementation review).** Verified: 126 tests green on the
+pinned dependencies; `run_demo.py` runs clean end to end; `run_site.py`
+emits valid JSON log lines and records a run in `output/events.db` with
+the RTSP password masked; the control API was exercised live
+(`PATCH`/`PUT`/404). Docker build not run here — no Docker on the dev
+machine; the pinned requirements match the passing test venv. Fixes made
+in review: `set_geometry` without an explicit `size` now clears the
+authored `geometry_size` so `_fit_geometry` cannot re-rescale live-frame
+coordinates; the preview render is wrapped so a missing display disables
+preview instead of crashing `run()`; `SqliteEventSink` opens with
+`check_same_thread=False` (one writer, but not always the constructing
+thread under `--all`); `resolution` must be positive ints. Deliberately
+left for later: config values are not type-checked beyond keys (Phase 2
+hardening); a control-API geometry change applies within a frame or two
+rather than atomically; the event store commits per event (fine at
+footfall rates); `--all` is an unsupervised multi-camera stopgap (Phase 3
+owns real per-camera supervision); and the counting-logic limitations in
+the debt list above — infinite line, centroid anchor, dwell fragmentation
+— are Phase 2.
 
 ### Phase 2 — Accuracy we can put in a contract
 
@@ -253,7 +292,9 @@ an enterprise one.
 ### Definition of done — the market-grade checklist
 
 - [ ] Runs unattended for 30+ days on a real site with automatic recovery from
-      camera and network outages.
+      camera and network outages. *(Phase 1 built the recovery — reconnect,
+      watchdog, supervised restart; the 30-day soak on a real site is still
+      owed.)*
 - [ ] Published accuracy targets, met on labelled footage from every vertical
       we sell into, re-checked every release.
 - [ ] No video or personal data leaves the customer site; only aggregates.
@@ -261,4 +302,5 @@ an enterprise one.
 - [ ] Multi-tenant, authenticated, access-controlled.
 - [ ] DPIA, retention policy, and a passed penetration test on file.
 - [ ] Versioned releases, CI, regression tests, and an on-call support
-      process.
+      process. *(Phase 1: CI + regression tests done; releases and on-call
+      still owed.)*
