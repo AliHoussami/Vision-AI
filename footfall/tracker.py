@@ -35,6 +35,7 @@ import cv2
 from ultralytics import YOLO
 
 from .capture import ReconnectingCapture
+from .control import LiveControls
 from .pipeline import ThreadedFrameSource
 from .storage import CsvEventSink, EventSink, NullSink, SqliteEventSink
 
@@ -129,6 +130,7 @@ class FootfallTracker:
         hw_accel: str = "auto",
         frame_buffer: int = 2,
         drop_stale_frames: Optional[bool] = None,
+        control_port: Optional[int] = None,
     ):
         self.source = source
         self.line = line
@@ -187,6 +189,11 @@ class FootfallTracker:
         self.frame_buffer = frame_buffer
         self.drop_stale_frames = drop_stale_frames
         self._frame_source = None
+
+        # localhost control API: read status/config and hot-apply a
+        # bounded set of changes without restarting. None = off.
+        self.control_port = control_port
+        self._controls = LiveControls(self)
 
         from . import resolve_model
 
@@ -325,18 +332,6 @@ class FootfallTracker:
         persist=True carries track state across them, and across a
         reconnect.
         """
-        track_kw = dict(
-            classes=[self.person_class_id],
-            conf=self.conf,
-            iou=self.iou,
-            imgsz=self.imgsz,
-            tracker=self.tracker,
-            persist=True,
-            verbose=False,
-        )
-        if self.device is not None:
-            track_kw["device"] = self.device
-
         self._capture = ReconnectingCapture(
             self.source,
             capture_size=self.capture_size,
@@ -353,6 +348,19 @@ class FootfallTracker:
         self._frame_source = ThreadedFrameSource(
             self._capture.frames(), drop=drop, maxsize=self.frame_buffer)
         for frame in self._frame_source:
+            # rebuilt per frame so the control API can retune conf / iou
+            # (imgsz, tracker, device need a restart and never change here)
+            track_kw = dict(
+                classes=[self.person_class_id],
+                conf=self.conf,
+                iou=self.iou,
+                imgsz=self.imgsz,
+                tracker=self.tracker,
+                persist=True,
+                verbose=False,
+            )
+            if self.device is not None:
+                track_kw["device"] = self.device
             yield self.model.track(frame, **track_kw)[0]
 
     def _fit_geometry(self, frame_w: int, frame_h: int):
@@ -384,6 +392,12 @@ class FootfallTracker:
         cap_writer = None
         frame_idx = 0
         started_at = time.time()
+
+        control_server = None
+        if self.control_port is not None:
+            from .control import ControlServer
+            control_server = ControlServer(self, port=self.control_port).start()
+            print(f"[control] http://{control_server.host}:{control_server.port}")
 
         try:
             for result in self._iter_results():
@@ -446,6 +460,8 @@ class FootfallTracker:
             self._zone_entry_time.clear()
             if cap_writer:
                 cap_writer.release()
+            if control_server is not None:
+                control_server.stop()
             self._sink.close()
             if self.preview:
                 cv2.destroyAllWindows()

@@ -63,6 +63,9 @@ def main():
                     help="print the fully resolved config and exit")
     ap.add_argument("--no-preview", action="store_true",
                     help="force the live preview window off")
+    ap.add_argument("--control-port", type=int, default=None,
+                    help="serve the localhost control API on this port "
+                         "(with --all, cameras get port, port+1, ...)")
     args = ap.parse_args()
 
     try:
@@ -76,16 +79,23 @@ def main():
 
     overrides = {"preview": False} if args.no_preview else {}
 
+    def _with_port(base, offset=0):
+        if args.control_port is None:
+            return base
+        return {**base, "control_port": args.control_port + offset}
+
     if args.camera:
-        _run_camera(site.camera(args.camera), site, overrides)
+        _run_camera(site.camera(args.camera), site, _with_port(overrides))
         return
 
     if args.all:
         overrides = {**overrides, "preview": False}
         threads = [
-            threading.Thread(target=_run_camera, args=(cam, site, overrides),
-                             name=f"cam-{cam.id}", daemon=True)
-            for cam in site.cameras
+            threading.Thread(
+                target=_run_camera,
+                args=(cam, site, _with_port(overrides, i)),
+                name=f"cam-{cam.id}", daemon=True)
+            for i, cam in enumerate(site.cameras)
         ]
         for t in threads:
             t.start()
@@ -97,7 +107,7 @@ def main():
         return
 
     if len(site.cameras) == 1:
-        _run_camera(site.cameras[0], site, overrides)
+        _run_camera(site.cameras[0], site, _with_port(overrides))
         return
 
     ap.error(f"{len(site.cameras)} cameras in the config -- pass --camera <id> "

@@ -50,6 +50,7 @@ def output(name: str) -> str:
 
 from .config import (CameraConfig, ConfigError, SiteConfig,  # noqa: E402
                      load_config, resolved, tracker_kwargs)
+from .control import ControlServer, LiveControls  # noqa: E402
 from .storage import (CsvEventSink, EventSink, NullSink,  # noqa: E402
                       SqliteEventSink, new_run_id)
 from .tracker import FootfallTracker, Point, max_capture_size  # noqa: E402
@@ -79,4 +80,6 @@ __all__ = [
     "SiteConfig",
     "CameraConfig",
     "ConfigError",
+    "ControlServer",
+    "LiveControls",
 ]

@@ -36,7 +36,7 @@ class ConfigError(ValueError):
 _SETTING_KEYS = {
     "model", "imgsz", "conf", "iou", "tracker", "device", "hw_accel",
     "frame_buffer", "stale_after", "detect_frozen", "min_box_height",
-    "max_aspect", "preview",
+    "max_aspect", "preview", "control_port",
 }
 _RECONNECT_KEYS = {"initial", "factor", "max", "retries"}
 
@@ -54,6 +54,7 @@ _DEFAULT_SETTINGS: Dict[str, Any] = {
     "min_box_height": 0,
     "max_aspect": None,
     "preview": False,
+    "control_port": None,   # None -> no local control API
     "reconnect": {"initial": 1.0, "factor": 2.0, "max": 30.0, "retries": None},
 }
 
@@ -230,6 +231,7 @@ def tracker_kwargs(cam: CameraConfig, site: SiteConfig,
         min_box_height=s["min_box_height"],
         max_aspect=s["max_aspect"],
         preview=s["preview"],
+        control_port=s["control_port"],
         reconnect_initial=s["reconnect"]["initial"],
         reconnect_factor=s["reconnect"]["factor"],
         reconnect_max=s["reconnect"]["max"],

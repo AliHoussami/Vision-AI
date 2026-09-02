@@ -131,11 +131,15 @@ and writes to a real database.
   store-and-forward disk buffer start to matter.
 - Configuration as a file instead of CLI flags: one YAML per site — name,
   timezone, a shared `defaults` block, and a list of cameras (source,
-  resolution, zones file, per-camera overrides). Done: `footfall/config.py`
-  + `tools/run_site.py`. Still to add: a small `localhost` API to read the
-  config and change some settings (a threshold, a zone, an added camera)
-  without restarting the process — the seed of Phase 3 fleet management and
-  Phase 4 onboarding.
+  resolution, zones file, per-camera overrides). `footfall/config.py` +
+  `tools/run_site.py`.
+- A small `localhost` control API on a running tracker (`footfall/control.py`,
+  `control_port` in the config): `GET /status` and `/config`, `PATCH
+  /config` to retune detection thresholds live, `PUT /geometry` to redraw
+  the line / zone / ignore regions — all without restarting. Model, imgsz
+  and source are rejected as restart-only. Localhost bind is the only
+  boundary for now; real auth is Phase 5. This is the seed of Phase 3
+  fleet management and Phase 4 onboarding.
 - Secrets handling: camera credentials in a secrets store or OS keyring, never
   on the command line or in logs.
 - Packaging: a container image, a supervised process (systemd / container

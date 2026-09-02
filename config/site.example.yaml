@@ -26,6 +26,7 @@ defaults:
   min_box_height: 0
   max_aspect: null
   preview: false
+  control_port: null              # e.g. 8787 -> localhost API to retune while running
   reconnect:
     initial: 1.0
     factor: 2.0
