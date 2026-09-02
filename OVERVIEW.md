@@ -140,8 +140,13 @@ and writes to a real database.
   and source are rejected as restart-only. Localhost bind is the only
   boundary for now; real auth is Phase 5. This is the seed of Phase 3
   fleet management and Phase 4 onboarding.
-- Secrets handling: camera credentials in a secrets store or OS keyring, never
-  on the command line or in logs.
+- Secrets handling (`footfall/secrets.py`): a camera `source` carries a
+  `${SECRET:name}` / `${ENV:name}` placeholder, resolved at config load
+  from an env var, the OS keyring, or a gitignored `config/secrets.yaml`.
+  `redact()` masks credentials everywhere a source is printed, stored in
+  the event DB, or shown by `--print`; only `cv2.VideoCapture` ever sees
+  the real URL. `get_rtsp_url.py` prompts for the password instead of
+  taking it on the command line.
 - Packaging: a container image, a supervised process (systemd / container
   restart policy), structured JSON logging.
 - Test suite: unit tests for line-crossing and point-in-polygon geometry, a

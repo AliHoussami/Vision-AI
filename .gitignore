@@ -33,6 +33,9 @@ config/zones/
 # A real site config carries camera addresses; only the example is tracked.
 config/site.yaml
 config/*.local.yaml
+# Camera credentials -- never commit these.
+config/secrets.yaml
+secrets.yaml
 
 # --- Editor / OS noise ---
 *.bak

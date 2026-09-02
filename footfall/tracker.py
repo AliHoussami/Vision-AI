@@ -37,6 +37,7 @@ from ultralytics import YOLO
 from .capture import ReconnectingCapture
 from .control import LiveControls
 from .pipeline import ThreadedFrameSource
+from .secrets import redact
 from .storage import CsvEventSink, EventSink, NullSink, SqliteEventSink
 
 
@@ -98,6 +99,7 @@ class FootfallTracker:
     def __init__(
         self,
         source,
+        source_display: Optional[str] = None,
         line: Optional[Tuple[Point, Point]] = None,
         zone: Optional[List[Point]] = None,
         model_path: str = "yolov8n.pt",
@@ -133,6 +135,10 @@ class FootfallTracker:
         control_port: Optional[int] = None,
     ):
         self.source = source
+        # credential-masked form for logs, the event store, and any status
+        # output -- the real URL only ever reaches cv2.VideoCapture
+        self.source_display = (source_display if source_display is not None
+                               else redact(str(source)))
         self.line = line
         self.zone = zone
         self.conf = conf
@@ -218,7 +224,7 @@ class FootfallTracker:
         if event_sink is not None:
             self._sink = event_sink
         elif events_db:
-            self._sink = SqliteEventSink(events_db, source=str(source),
+            self._sink = SqliteEventSink(events_db, source=self.source_display,
                                          site=site, tz=tz)
         elif events_csv:
             self._sink = CsvEventSink(events_csv)
@@ -334,6 +340,7 @@ class FootfallTracker:
         """
         self._capture = ReconnectingCapture(
             self.source,
+            display_source=self.source_display,
             capture_size=self.capture_size,
             backoff_initial=self.reconnect_initial,
             backoff_factor=self.reconnect_factor,

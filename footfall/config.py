@@ -25,6 +25,7 @@ from typing import Any, Dict, List, Optional
 import yaml
 
 from . import ROOT
+from .secrets import redact, resolve_placeholders
 
 
 class ConfigError(ValueError):
@@ -73,7 +74,8 @@ class SiteMeta:
 @dataclass
 class CameraConfig:
     id: str
-    source: Any                                  # int index | path | URL
+    source: Any                                  # int index | path | URL (resolved)
+    source_display: Any = None                   # credential-masked, for logs
     resolution: Optional[tuple] = None
     zones_path: Optional[str] = None
     settings: Dict[str, Any] = field(default_factory=dict)   # defaults + override
@@ -134,7 +136,8 @@ def _parse_site(raw) -> SiteMeta:
     return SiteMeta(name=raw.get("name"), timezone=raw.get("timezone"))
 
 
-def _parse_camera(raw, index: int, defaults: dict, base: Path) -> CameraConfig:
+def _parse_camera(raw, index: int, defaults: dict, base: Path,
+                  resolve_secrets: bool) -> CameraConfig:
     raw = _require_mapping(raw, f"cameras[{index}]")
     _reject_unknown(raw, _CAMERA_KEYS, f"cameras[{index}]")
 
@@ -147,6 +150,15 @@ def _parse_camera(raw, index: int, defaults: dict, base: Path) -> CameraConfig:
     source = raw["source"]
     if isinstance(source, str) and source.isdigit():
         source = int(source)                     # "0" -> camera index 0
+        source_display = source
+    elif isinstance(source, str):
+        # ${SECRET:..} / ${ENV:..} expand here; the masked form is what
+        # gets logged and stored
+        source_display = redact(source)
+        if resolve_secrets:
+            source = resolve_placeholders(source)
+    else:
+        source_display = source
 
     resolution = None
     if raw.get("resolution") is not None:
@@ -162,14 +174,18 @@ def _parse_camera(raw, index: int, defaults: dict, base: Path) -> CameraConfig:
     override = {k: raw[k] for k in (_SETTING_KEYS | {"reconnect"}) if k in raw}
     settings = _merge_settings(defaults, override, f"camera {cam_id!r}")
 
-    return CameraConfig(id=cam_id, source=source, resolution=resolution,
-                        zones_path=zones_path, settings=settings)
+    return CameraConfig(id=cam_id, source=source, source_display=source_display,
+                        resolution=resolution, zones_path=zones_path,
+                        settings=settings)
 
 
 # -- public API -------------------------------------------------------
 
 
-def load_config(path) -> SiteConfig:
+def load_config(path, *, resolve_secrets: bool = True) -> SiteConfig:
+    """Load and validate a site config. resolve_secrets=False leaves
+    ${SECRET:..} / ${ENV:..} placeholders in the source unexpanded -- for
+    inspecting a config off the box where the real store lives."""
     path = Path(path)
     if not path.exists():
         raise ConfigError(f"config file not found: {path}")
@@ -191,7 +207,7 @@ def load_config(path) -> SiteConfig:
     cameras: List[CameraConfig] = []
     seen = set()
     for i, c in enumerate(cams_raw):
-        cam = _parse_camera(c, i, defaults, ROOT)
+        cam = _parse_camera(c, i, defaults, ROOT, resolve_secrets)
         if cam.id in seen:
             raise ConfigError(f"duplicate camera id {cam.id!r}")
         seen.add(cam.id)
@@ -217,6 +233,7 @@ def tracker_kwargs(cam: CameraConfig, site: SiteConfig,
     s = cam.settings
     kw: Dict[str, Any] = dict(
         source=cam.source,
+        source_display=cam.source_display,
         capture_size=cam.resolution,
         conf=s["conf"],
         iou=s["iou"],
@@ -260,7 +277,7 @@ def resolved(site: SiteConfig) -> dict:
         "cameras": [
             {
                 "id": c.id,
-                "source": c.source,
+                "source": c.source_display,      # never the resolved credentials
                 "resolution": list(c.resolution) if c.resolution else None,
                 "zones": c.zones_path,
                 "settings": c.settings,

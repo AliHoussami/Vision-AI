@@ -217,3 +217,42 @@ def test_resolved_is_plain_data(tmp_path):
     assert r["site"] == {"name": "Test Site", "timezone": "Europe/Paris"}
     assert r["cameras"][0]["id"] == "door"
     assert r["cameras"][0]["settings"]["conf"] == 0.5
+
+
+# -- secrets in the source ------------------------------------------
+
+
+_SECRET_SRC = """
+    cameras:
+      - id: door
+        source: "rtsp://${SECRET:cam1}@10.0.0.1:554/s"
+"""
+
+
+def test_source_secret_is_resolved_display_is_masked(tmp_path, monkeypatch):
+    monkeypatch.setenv("FOOTFALL_SECRET_CAM1", "admin:pw")
+    cam = load_config(_write(tmp_path, _SECRET_SRC)).cameras[0]
+    assert cam.source == "rtsp://admin:pw@10.0.0.1:554/s"
+    assert cam.source_display == "rtsp://***@10.0.0.1:554/s"
+
+
+def test_resolve_secrets_false_keeps_the_placeholder(tmp_path):
+    cam = load_config(_write(tmp_path, _SECRET_SRC),
+                      resolve_secrets=False).cameras[0]
+    assert cam.source == "rtsp://${SECRET:cam1}@10.0.0.1:554/s"
+    assert cam.source_display == "rtsp://***@10.0.0.1:554/s"
+
+
+def test_resolved_config_never_carries_credentials(tmp_path, monkeypatch):
+    monkeypatch.setenv("FOOTFALL_SECRET_CAM1", "admin:pw")
+    site = load_config(_write(tmp_path, _SECRET_SRC))
+    assert "admin:pw" not in json.dumps(resolved(site))
+    assert resolved(site)["cameras"][0]["source"] == "rtsp://***@10.0.0.1:554/s"
+
+
+def test_tracker_kwargs_passes_masked_display(tmp_path, monkeypatch):
+    monkeypatch.setenv("FOOTFALL_SECRET_CAM1", "admin:pw")
+    site = load_config(_write(tmp_path, _SECRET_SRC))
+    kw = tracker_kwargs(site.cameras[0], site)
+    assert kw["source"] == "rtsp://admin:pw@10.0.0.1:554/s"
+    assert kw["source_display"] == "rtsp://***@10.0.0.1:554/s"

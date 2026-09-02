@@ -41,6 +41,8 @@ from typing import Callable, Optional, Tuple
 import cv2
 import numpy as np
 
+from .secrets import redact
+
 # URL schemes that mean "a live stream", i.e. reconnect forever rather
 # than treating a failed read as end-of-input.
 _LIVE_SCHEMES = ("rtsp://", "rtmp://", "http://", "https://", "udp://", "tcp://")
@@ -104,6 +106,7 @@ class ReconnectingCapture:
         stale_after: Optional[float] = 10.0,
         detect_frozen: bool = True,
         hw_accel: str = "auto",
+        display_source: Optional[str] = None,
         cap_factory: Optional[Callable] = None,
         sleep: Callable[[float], None] = time.sleep,
         monotonic: Callable[[], float] = time.monotonic,
@@ -126,6 +129,8 @@ class ReconnectingCapture:
                         stream/file (software fallback is automatic);
                         "none" -> force software; "gstreamer" -> open the
                         source as a GStreamer pipeline
+        display_source  credential-masked source string for log lines and
+                        error messages; defaults to redact(source)
         cap_factory     injectable for tests; default builds a cv2.VideoCapture
                         with the hw_accel choice applied
         sleep           injectable for tests; defaults to time.sleep
@@ -137,6 +142,8 @@ class ReconnectingCapture:
         if isinstance(source, str) and source.isdigit():
             source = int(source)
         self.source = source
+        self._display = (display_source if display_source is not None
+                         else redact(str(source)))
         self.capture_size = capture_size
         self.is_live = _looks_live(source) if is_live is None else is_live
         self.backoff_initial = backoff_initial
@@ -235,7 +242,7 @@ class ReconnectingCapture:
                 return
             self.stale_trips += 1
             self._stale_tripped = True
-            self._log(f"[capture] {self.source!r} delivered no new frame for "
+            self._log(f"[capture] {self._display!r} delivered no new frame for "
                       f"~{self.stale_after:.0f}s; forcing reconnect")
             try:
                 self._cap.release()          # unblocks a hung read()
@@ -345,13 +352,13 @@ class ReconnectingCapture:
                         # only a live stream is worth waiting on.
                         if not self.is_live:
                             raise ConnectionError(
-                                f"could not open {self.source!r}")
+                                f"could not open {self._display!r}")
                         if (self.max_retries is not None
                                 and self._retries >= self.max_retries):
                             raise ConnectionError(
-                                f"could not open {self.source!r} after "
+                                f"could not open {self._display!r} after "
                                 f"{self._retries} attempts")
-                        self._backoff(f"cannot open {self.source!r}")
+                        self._backoff(f"cannot open {self._display!r}")
                         continue
                     with self._cap_lock:
                         self._cap = cap
@@ -360,7 +367,7 @@ class ReconnectingCapture:
                     self._last_sig = None
                     if self._opened_once:
                         self.reconnects += 1
-                        self._log(f"[capture] reconnected to {self.source!r} "
+                        self._log(f"[capture] reconnected to {self._display!r} "
                                   f"(reconnect #{self.reconnects})")
                     self._opened_once = True
                     self._reset_backoff()
@@ -375,7 +382,7 @@ class ReconnectingCapture:
 
                 if self._stale_tripped:
                     self._discard_cap()
-                    self._backoff(f"stream {self.source!r} went stale")
+                    self._backoff(f"stream {self._display!r} went stale")
                     continue
 
                 if ok and frame is not None:
@@ -387,7 +394,7 @@ class ReconnectingCapture:
                 self._discard_cap()
                 if not self.is_live:
                     return  # end of a file, not an error
-                self._backoff(f"stream {self.source!r} dropped")
+                self._backoff(f"stream {self._display!r} dropped")
         finally:
             self._stop_monitor()
             self._discard_cap()

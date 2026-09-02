@@ -25,6 +25,7 @@ import yaml
 
 from footfall import FootfallTracker
 from footfall.config import ConfigError, load_config, resolved, tracker_kwargs
+from footfall.secrets import SecretError
 
 
 def _apply_hardware_defaults(settings: dict) -> bool:
@@ -44,7 +45,7 @@ def _apply_hardware_defaults(settings: dict) -> bool:
 def _run_camera(cam, site, overrides):
     _apply_hardware_defaults(cam.settings)
     kw = tracker_kwargs(cam, site, overrides=overrides)
-    print(f"[{cam.id}] source={cam.source!r} model={kw['model_path']} "
+    print(f"[{cam.id}] source={cam.source_display!r} model={kw['model_path']} "
           f"imgsz={kw['imgsz']} preview={kw['preview']}")
     summary = FootfallTracker(**kw).run()
     print(f"[{cam.id}] " + "  ".join(f"{k}={v}" for k, v in summary.items()))
@@ -68,9 +69,10 @@ def main():
                          "(with --all, cameras get port, port+1, ...)")
     args = ap.parse_args()
 
+    # --print inspects the config without touching the secret store
     try:
-        site = load_config(args.config)
-    except ConfigError as exc:
+        site = load_config(args.config, resolve_secrets=not args.show)
+    except (ConfigError, SecretError) as exc:
         ap.error(str(exc))
 
     if args.show:

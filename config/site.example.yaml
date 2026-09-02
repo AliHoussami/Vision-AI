@@ -40,8 +40,11 @@ cameras:
     zones: config/zones/door.json # optional; entrance line + queue zone + ignore regions
     conf: 0.55                    # this camera only
 
+  # Credentials go through ${SECRET:name} -- never inline a password here.
+  # Provide the value via env (FOOTFALL_SECRET_CHECKOUT_3), the OS keyring,
+  # or config/secrets.yaml. See config/secrets.example.yaml.
   # - id: checkout-3
-  #   source: "rtsp://192.168.1.50:554/Streaming/Channels/301"
+  #   source: "rtsp://${SECRET:checkout-3}@192.168.1.50:554/Streaming/Channels/301"
   #   zones: config/zones/checkout3.json
 
 storage:
