@@ -120,6 +120,8 @@ class FootfallTracker:
         reconnect_factor: float = 2.0,
         reconnect_max: float = 30.0,
         reconnect_retries: Optional[int] = None,
+        stale_after: Optional[float] = 10.0,
+        detect_frozen: bool = True,
         frame_buffer: int = 2,
         drop_stale_frames: Optional[bool] = None,
     ):
@@ -163,6 +165,10 @@ class FootfallTracker:
         self.reconnect_factor = reconnect_factor
         self.reconnect_max = reconnect_max
         self.reconnect_retries = reconnect_retries
+        # Watchdog: force a reconnect if a live stream stays open but stops
+        # delivering new frames (frozen transport or a repeating decoder).
+        self.stale_after = stale_after
+        self.detect_frozen = detect_frozen
         self._capture = None
 
         # Capture runs on its own thread with a small bounded buffer, so a
@@ -323,6 +329,8 @@ class FootfallTracker:
             backoff_factor=self.reconnect_factor,
             backoff_max=self.reconnect_max,
             max_retries=self.reconnect_retries,
+            stale_after=self.stale_after,
+            detect_frozen=self.detect_frozen,
         )
         drop = (self.drop_stale_frames if self.drop_stale_frames is not None
                 else self._capture.is_live)
@@ -444,6 +452,7 @@ class FootfallTracker:
             "peak_minute": peak_minute[0],
             "peak_minute_count": peak_minute[1],
             "reconnects": self._capture.reconnects if self._capture else 0,
+            "stale_trips": self._capture.stale_trips if self._capture else 0,
             "dropped_frames": (self._frame_source.dropped
                                if self._frame_source else 0),
         }
