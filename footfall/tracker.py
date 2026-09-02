@@ -35,6 +35,8 @@ from typing import List, Optional, Tuple
 import cv2
 from ultralytics import YOLO
 
+from .capture import ReconnectingCapture
+
 
 @dataclass
 class Point:
@@ -113,6 +115,10 @@ class FootfallTracker:
         min_box_height: int = 0,
         max_aspect: Optional[float] = None,
         ignore_zones: Optional[List[List[Point]]] = None,
+        reconnect_initial: float = 1.0,
+        reconnect_factor: float = 2.0,
+        reconnect_max: float = 30.0,
+        reconnect_retries: Optional[int] = None,
     ):
         self.source = source
         self.line = line
@@ -146,6 +152,15 @@ class FootfallTracker:
         self.ignore_zones = ignore_zones or []
         self.ignored_detections = 0
         self._preview_window = "Footfall Tracker - press Q to stop"
+
+        # RTSP/webcam reconnection: exponential backoff on a dropped stream.
+        # None retries = keep trying forever (the right default for a camera
+        # that will come back after a reboot).
+        self.reconnect_initial = reconnect_initial
+        self.reconnect_factor = reconnect_factor
+        self.reconnect_max = reconnect_max
+        self.reconnect_retries = reconnect_retries
+        self._capture = None
 
         from . import resolve_model
 
@@ -271,10 +286,11 @@ class FootfallTracker:
     def _iter_results(self):
         """Yield per-frame Results.
 
-        Without capture_size we hand the source to ultralytics and let it
-        manage the capture. With capture_size we open the capture ourselves
-        so we can force the resolution -- ultralytics gives no way to set it,
-        and webcams default to a narrow cropped mode.
+        We always own the capture (through ReconnectingCapture) instead of
+        handing the source to ultralytics, so a dropped RTSP or webcam
+        stream reconnects with exponential backoff rather than ending the
+        run. Frames go to the tracker one at a time; persist=True carries
+        track state across them, and across a reconnect.
         """
         track_kw = dict(
             classes=[self.person_class_id],
@@ -288,25 +304,16 @@ class FootfallTracker:
         if self.device is not None:
             track_kw["device"] = self.device
 
-        if self.capture_size is None:
-            yield from self.model.track(source=self.source, stream=True, **track_kw)
-            return
-
-        want_w, want_h = self.capture_size
-        cap = cv2.VideoCapture(self.source)
-        if not cap.isOpened():
-            cap.release()
-            raise RuntimeError(f"Could not open source: {self.source}")
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, want_w)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, want_h)
-        try:
-            while True:
-                ok, frame = cap.read()
-                if not ok or frame is None:
-                    break
-                yield self.model.track(frame, **track_kw)[0]
-        finally:
-            cap.release()
+        self._capture = ReconnectingCapture(
+            self.source,
+            capture_size=self.capture_size,
+            backoff_initial=self.reconnect_initial,
+            backoff_factor=self.reconnect_factor,
+            backoff_max=self.reconnect_max,
+            max_retries=self.reconnect_retries,
+        )
+        for frame in self._capture.frames():
+            yield self.model.track(frame, **track_kw)[0]
 
     def _fit_geometry(self, frame_w: int, frame_h: int):
         """Rescale line/zone if they were drawn on a different frame size.
@@ -420,4 +427,5 @@ class FootfallTracker:
             "ignored_detections": self.ignored_detections,
             "peak_minute": peak_minute[0],
             "peak_minute_count": peak_minute[1],
+            "reconnects": self._capture.reconnects if self._capture else 0,
         }
