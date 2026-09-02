@@ -48,6 +48,8 @@ def output(name: str) -> str:
     return str(OUTPUT_DIR / name)
 
 
+from .config import (CameraConfig, ConfigError, SiteConfig,  # noqa: E402
+                     load_config, resolved, tracker_kwargs)
 from .storage import (CsvEventSink, EventSink, NullSink,  # noqa: E402
                       SqliteEventSink, new_run_id)
 from .tracker import FootfallTracker, Point, max_capture_size  # noqa: E402
@@ -71,4 +73,10 @@ __all__ = [
     "CsvEventSink",
     "NullSink",
     "new_run_id",
+    "load_config",
+    "tracker_kwargs",
+    "resolved",
+    "SiteConfig",
+    "CameraConfig",
+    "ConfigError",
 ]

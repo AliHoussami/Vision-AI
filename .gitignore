@@ -24,11 +24,15 @@ output/
 *.db-shm
 *.sqlite
 
-# --- Per-camera configuration ---
+# --- Per-camera / per-site configuration ---
 # zones.json holds pixel coordinates for ONE physical camera at ONE
 # resolution. It is meaningless on anyone else's setup, so it stays
 # local. zones.example.json is committed instead to document the shape.
 zones.json
+config/zones/
+# A real site config carries camera addresses; only the example is tracked.
+config/site.yaml
+config/*.local.yaml
 
 # --- Editor / OS noise ---
 *.bak

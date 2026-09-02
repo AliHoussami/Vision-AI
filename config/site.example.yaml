@@ -1,0 +1,47 @@
+# Site configuration for the footfall pipeline.
+#
+# Copy this to config/site.yaml (gitignored) and edit. Run it with:
+#     python tools/run_site.py config/site.yaml --camera door
+#
+# Per-camera keys override the shared `defaults` block. Non-absolute paths
+# are resolved against the project root. Do NOT put camera passwords here
+# -- keep credentials out of band (that is the next roadmap step).
+
+site:
+  name: "Demo Site"
+  timezone: "Europe/Paris"        # IANA name; stamped on every event
+
+# Applied to every camera unless the camera overrides the same key.
+defaults:
+  model: null                     # null -> chosen by hardware (s+960 GPU, n+640 CPU)
+  imgsz: null
+  conf: 0.50
+  iou: 0.5
+  tracker: null                   # null -> the repo's tuned config/tracker_people.yaml
+  device: null                    # e.g. "0" or "cpu"
+  hw_accel: auto                  # auto | none | gstreamer
+  frame_buffer: 2
+  stale_after: 10.0               # seconds without a new frame -> force reconnect
+  detect_frozen: true
+  min_box_height: 0
+  max_aspect: null
+  preview: false
+  reconnect:
+    initial: 1.0
+    factor: 2.0
+    max: 30.0
+    retries: null                 # null -> retry forever
+
+cameras:
+  - id: door
+    source: 0                     # camera index, a file path, or an rtsp:// URL
+    resolution: [1280, 720]       # optional; what to request from the device
+    zones: config/zones/door.json # optional; entrance line + queue zone + ignore regions
+    conf: 0.55                    # this camera only
+
+  # - id: checkout-3
+  #   source: "rtsp://192.168.1.50:554/Streaming/Channels/301"
+  #   zones: config/zones/checkout3.json
+
+storage:
+  events_db: output/events.db     # SQLite; see tools/events_db.py

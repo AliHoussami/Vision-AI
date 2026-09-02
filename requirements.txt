@@ -4,6 +4,7 @@ opencv-python>=4.9.0      # full build, not headless: define_zones.py and the
                           # live preview need cv2.imshow
 lap>=0.5.12               # ByteTrack/BoT-SORT association solver
 numpy>=1.26.0
+PyYAML>=6.0              # site config files (also pulled in by ultralytics)
 
 # IP camera discovery (only needed for get_rtsp_url.py)
 onvif-zeep>=0.2.12
