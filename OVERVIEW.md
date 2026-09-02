@@ -102,7 +102,9 @@ and that bar.
   perspective view this misplaces people by a metre or more. Needs a
   bottom-of-box anchor and, better, a ground-plane homography per camera.
 - **`events.csv` is overwritten each run and timestamps are timezone-naive.**
-  Not a persistence layer. Needs a real event store with per-site timezone.
+  Not a persistence layer. Being replaced by a SQLite `EventSink` (Phase 1)
+  with a per-run `run_id`, UTC + site-zone timestamps, and idempotent
+  writes; a Postgres + TimescaleDB backend follows in Phase 3.
 - **Single-threaded loop** does decode + inference + drawing + encoding in
   series. Decode, inference, and analytics need to be separate stages.
 - **No stream resilience.** Cameras drop, reboot, and change IP; the pipeline
@@ -118,9 +120,15 @@ and writes to a real database.
 - Split the pipeline into stages (capture → inference → tracking → event
   logic) with bounded queues, so a slow stage drops frames instead of
   stalling.
-- Replace CSV with an event store (Postgres + TimescaleDB or equivalent):
-  append-only, timezone-aware, idempotent writes, local disk buffer for when
-  the DB is unreachable.
+- Replace CSV with an event store behind a small `EventSink` interface:
+  append-only, timezone-aware (UTC + site zone), idempotent writes keyed on
+  `(run_id, event, track_id, monotonic index)`, per-run `run_id`, and a
+  one-command reset for local testing. **Implementation now: SQLite** — a
+  single file, so a clean slate is still just deleting it, but with a real
+  schema and queryable history. Postgres + TimescaleDB is a later, drop-in
+  second implementation of the same interface (see Phase 3), added when
+  there are real sites and a central store, retention policies, and a
+  store-and-forward disk buffer start to matter.
 - Configuration as a file / small local API instead of CLI flags: cameras,
   geometry, model settings, site metadata.
 - Secrets handling: camera credentials in a secrets store or OS keyring, never
@@ -164,6 +172,13 @@ sends only aggregates to the cloud.
   process per camera or a batched multi-stream worker.
 - Aggregates-only uplink: counts, occupancy, and timings leave the site;
   frames and tracks stay local. Define the exact payload and retention.
+- Promote the event store from SQLite to **Postgres + TimescaleDB** as a
+  second implementation of the Phase 1 `EventSink` interface: a central
+  multi-site store, TimescaleDB hypertables and continuous aggregates for
+  the dashboards, a documented retention policy (auto-drop raw events past
+  N days), and a store-and-forward disk buffer on the edge box that flushes
+  in order once the uplink returns. SQLite stays the default for local dev
+  and single-box installs.
 - Multi-camera merge: hand off a person between overlapping views and
   de-duplicate across shared zones so a queue seen by two cameras is counted
   once.
