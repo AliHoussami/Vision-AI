@@ -129,8 +129,13 @@ and writes to a real database.
   second implementation of the same interface (see Phase 3), added when
   there are real sites and a central store, retention policies, and a
   store-and-forward disk buffer start to matter.
-- Configuration as a file / small local API instead of CLI flags: cameras,
-  geometry, model settings, site metadata.
+- Configuration as a file instead of CLI flags: one YAML per site — name,
+  timezone, a shared `defaults` block, and a list of cameras (source,
+  resolution, zones file, per-camera overrides). Done: `footfall/config.py`
+  + `tools/run_site.py`. Still to add: a small `localhost` API to read the
+  config and change some settings (a threshold, a zone, an added camera)
+  without restarting the process — the seed of Phase 3 fleet management and
+  Phase 4 onboarding.
 - Secrets handling: camera credentials in a secrets store or OS keyring, never
   on the command line or in logs.
 - Packaging: a container image, a supervised process (systemd / container
