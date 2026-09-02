@@ -122,6 +122,7 @@ class FootfallTracker:
         reconnect_retries: Optional[int] = None,
         stale_after: Optional[float] = 10.0,
         detect_frozen: bool = True,
+        hw_accel: str = "auto",
         frame_buffer: int = 2,
         drop_stale_frames: Optional[bool] = None,
     ):
@@ -169,6 +170,9 @@ class FootfallTracker:
         # delivering new frames (frozen transport or a repeating decoder).
         self.stale_after = stale_after
         self.detect_frozen = detect_frozen
+        # "auto" requests a hardware video decoder where the platform has
+        # one, with automatic software fallback.
+        self.hw_accel = hw_accel
         self._capture = None
 
         # Capture runs on its own thread with a small bounded buffer, so a
@@ -331,6 +335,7 @@ class FootfallTracker:
             max_retries=self.reconnect_retries,
             stale_after=self.stale_after,
             detect_frozen=self.detect_frozen,
+            hw_accel=self.hw_accel,
         )
         drop = (self.drop_stale_frames if self.drop_stale_frames is not None
                 else self._capture.is_live)
@@ -453,6 +458,8 @@ class FootfallTracker:
             "peak_minute_count": peak_minute[1],
             "reconnects": self._capture.reconnects if self._capture else 0,
             "stale_trips": self._capture.stale_trips if self._capture else 0,
+            "hw_decode": (self._capture.hw_accel_active
+                          if self._capture else None),
             "dropped_frames": (self._frame_source.dropped
                                if self._frame_source else 0),
         }

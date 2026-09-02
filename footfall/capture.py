@@ -22,7 +22,13 @@ thread times the gap since the last genuinely new frame and, once it
 exceeds ``stale_after``, force-releases the capture so the stuck read
 gives up and the reconnect path runs.
 
-Hardware-accelerated decode is a separate step.
+For a compressed stream or file the capture also *requests* a hardware
+decoder (NVDEC / VideoToolbox / VAAPI / D3D11, via OpenCV's
+CAP_PROP_HW_ACCELERATION). FFmpeg falls back to software on its own if
+none is available or the build lacks it; a GStreamer pipeline string is
+recognised and opened on that backend instead (the Jetson path). Which
+decoder actually engaged is read back and reported. Software decode of
+H.264/H.265 is the CPU bottleneck once several cameras share one box.
 
     for frame in ReconnectingCapture("rtsp://cam/stream").frames():
         ...
@@ -38,6 +44,36 @@ import numpy as np
 # URL schemes that mean "a live stream", i.e. reconnect forever rather
 # than treating a failed read as end-of-input.
 _LIVE_SCHEMES = ("rtsp://", "rtmp://", "http://", "https://", "udp://", "tcp://")
+
+# cap.get(CAP_PROP_HW_ACCELERATION) readback -> human name. Values are
+# OpenCV's VideoAccelerationType enum.
+_HW_ACCEL_NAMES = {0: "none", 1: "any", 2: "d3d11", 3: "vaapi", 4: "mfx"}
+
+
+def _is_gstreamer_pipeline(source) -> bool:
+    return isinstance(source, str) and " ! " in source
+
+
+def plan_open(source, hw_accel: str, cv2mod=cv2):
+    """Decide the VideoCapture backend and open params for a source.
+
+    Returns (backend, params). backend None means "use the plain
+    constructor with no extra params" -- correct for a camera index, for
+    an OpenCV too old to know the property, or when acceleration is off.
+    """
+    if hw_accel == "gstreamer" or _is_gstreamer_pipeline(source):
+        gst = getattr(cv2mod, "CAP_GSTREAMER", None)
+        return (gst, None) if gst is not None else (None, None)
+
+    if hw_accel == "none" or isinstance(source, int):
+        return (None, None)          # raw device, or explicitly disabled
+
+    prop = getattr(cv2mod, "CAP_PROP_HW_ACCELERATION", None)
+    any_accel = getattr(cv2mod, "VIDEO_ACCELERATION_ANY", None)
+    ffmpeg = getattr(cv2mod, "CAP_FFMPEG", None)
+    if prop is None or any_accel is None or ffmpeg is None:
+        return (None, None)          # OpenCV < 4.5.2
+    return (ffmpeg, [int(prop), int(any_accel)])
 
 
 def _looks_live(source) -> bool:
@@ -67,7 +103,8 @@ class ReconnectingCapture:
         max_retries: Optional[int] = None,
         stale_after: Optional[float] = 10.0,
         detect_frozen: bool = True,
-        cap_factory: Callable = cv2.VideoCapture,
+        hw_accel: str = "auto",
+        cap_factory: Optional[Callable] = None,
         sleep: Callable[[float], None] = time.sleep,
         monotonic: Callable[[], float] = time.monotonic,
         log: Callable[[str], None] = print,
@@ -85,7 +122,12 @@ class ReconnectingCapture:
                         force-reconnected; None or 0 disables the watchdog
         detect_frozen   also treat a byte-identical repeated frame as "no
                         new frame" (a frozen decoder), not just a stalled read
-        cap_factory     injectable for tests; defaults to cv2.VideoCapture
+        hw_accel        "auto" -> request a hardware decoder for a compressed
+                        stream/file (software fallback is automatic);
+                        "none" -> force software; "gstreamer" -> open the
+                        source as a GStreamer pipeline
+        cap_factory     injectable for tests; default builds a cv2.VideoCapture
+                        with the hw_accel choice applied
         sleep           injectable for tests; defaults to time.sleep
         monotonic       injectable for tests; defaults to time.monotonic
         log             where status lines go; defaults to print
@@ -103,7 +145,8 @@ class ReconnectingCapture:
         self.max_retries = max_retries
         self.stale_after = stale_after
         self.detect_frozen = detect_frozen
-        self._cap_factory = cap_factory
+        self.hw_accel = hw_accel
+        self._cap_factory = cap_factory or self._default_capture
         self._sleep = sleep
         self._monotonic = monotonic
         self._log = log
@@ -113,6 +156,10 @@ class ReconnectingCapture:
         self.reconnects = 0
         # number of times the staleness watchdog forced a reconnect
         self.stale_trips = 0
+        # which decode acceleration actually engaged, read back after the
+        # first successful open ("none", "d3d11", "vaapi", ...)
+        self.hw_accel_active = None
+        self._hw_probed = False
         # every backoff wait, in order -- handy for the run summary and tests
         self.waits = []
 
@@ -231,6 +278,34 @@ class ReconnectingCapture:
 
     # -- opening ----------------------------------------------------------------
 
+    def _default_capture(self, source):
+        """Build a cv2.VideoCapture with the hw_accel choice applied,
+        falling back to a plain open if the backend/params are rejected."""
+        backend, params = plan_open(source, self.hw_accel)
+        if backend is None:
+            return cv2.VideoCapture(source)
+        try:
+            cap = cv2.VideoCapture(source, backend, params or [])
+        except Exception:
+            return cv2.VideoCapture(source)
+        if not cap.isOpened():
+            cap.release()
+            return cv2.VideoCapture(source)      # this build can't use it
+        return cap
+
+    def _probe_hw_accel(self, cap):
+        prop = getattr(cv2, "CAP_PROP_HW_ACCELERATION", None)
+        if prop is None:
+            self.hw_accel_active = "unknown"
+            return
+        try:
+            val = int(cap.get(prop))
+        except Exception:
+            self.hw_accel_active = "unknown"
+            return
+        self.hw_accel_active = _HW_ACCEL_NAMES.get(val, f"type{val}")
+        self._log(f"[capture] decode acceleration: {self.hw_accel_active}")
+
     def _open(self):
         """Return an opened capture, or None if it could not be opened."""
         cap = self._cap_factory(self.source)
@@ -242,6 +317,9 @@ class ReconnectingCapture:
             w, h = self.capture_size
             cap.set(cv2.CAP_PROP_FRAME_WIDTH, w)
             cap.set(cv2.CAP_PROP_FRAME_HEIGHT, h)
+        if not self._hw_probed:
+            self._hw_probed = True
+            self._probe_hw_accel(cap)
         return cap
 
     # -- iteration ------------------------------------------------------------
