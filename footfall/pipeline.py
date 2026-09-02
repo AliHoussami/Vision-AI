@@ -24,14 +24,16 @@ Only the capture / processing split is handled here. Splitting inference
 from the event logic, and hardware-accelerated decode, are separate steps.
 """
 
+import logging
 import queue
 import threading
 
 _SENTINEL = object()
+_log = logging.getLogger(__name__)
 
 
 class ThreadedFrameSource:
-    def __init__(self, frames, *, drop, maxsize=2, log=print):
+    def __init__(self, frames, *, drop, maxsize=2, log=None):
         """
         frames   iterable of frames, e.g. ReconnectingCapture.frames()
         drop     True  -> live source: discard the oldest buffered frame
@@ -40,12 +42,12 @@ class ThreadedFrameSource:
                  False -> file source: block the capture thread when the
                           buffer is full; nothing is lost
         maxsize  buffer depth (frames)
-        log      status sink
+        log      debug sink for drops; defaults to this module's logger
         """
         self._frames = iter(frames)
         self._drop = drop
         self._q = queue.Queue(maxsize=max(1, maxsize))
-        self._log = log
+        self._log = log or _log.debug
 
         self._stop = threading.Event()
         self._done = False
@@ -100,6 +102,7 @@ class ThreadedFrameSource:
         try:
             self._q.get_nowait()
             self.dropped += 1
+            self._log(f"buffer full, dropped a stale frame ({self.dropped} total)")
         except queue.Empty:
             pass
         try:

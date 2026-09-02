@@ -1,0 +1,32 @@
+# systemd unit for a bare-metal (non-container) install.
+#
+#   sudo useradd --system --home /opt/footfall footfall
+#   sudo git clone <repo> /opt/footfall && cd /opt/footfall
+#   sudo -u footfall python -m venv .venv
+#   sudo -u footfall .venv/bin/pip install -r requirements.txt
+#   # put config/site.yaml and config/secrets.yaml in place
+#   sudo cp deploy/footfall.service /etc/systemd/system/
+#   sudo systemctl enable --now footfall
+#
+#   journalctl -u footfall -f        # JSON log lines
+
+[Unit]
+Description=Vision AI footfall pipeline
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=footfall
+WorkingDirectory=/opt/footfall
+Environment=FOOTFALL_LOG_FORMAT=json
+Environment=FOOTFALL_LOG_LEVEL=INFO
+ExecStart=/opt/footfall/.venv/bin/python tools/run_site.py config/site.yaml
+Restart=always
+RestartSec=5
+# back off if it is crash-looping rather than hammering the camera
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Install]
+WantedBy=multi-user.target

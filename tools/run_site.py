@@ -15,6 +15,7 @@ a best-effort convenience for a small single-box site.
 """
 
 import argparse
+import logging
 import sys
 import threading
 from pathlib import Path
@@ -25,7 +26,10 @@ import yaml
 
 from footfall import FootfallTracker
 from footfall.config import ConfigError, load_config, resolved, tracker_kwargs
+from footfall.logsetup import configure
 from footfall.secrets import SecretError
+
+_log = logging.getLogger("footfall.run_site")
 
 
 def _apply_hardware_defaults(settings: dict) -> bool:
@@ -45,10 +49,12 @@ def _apply_hardware_defaults(settings: dict) -> bool:
 def _run_camera(cam, site, overrides):
     _apply_hardware_defaults(cam.settings)
     kw = tracker_kwargs(cam, site, overrides=overrides)
-    print(f"[{cam.id}] source={cam.source_display!r} model={kw['model_path']} "
-          f"imgsz={kw['imgsz']} preview={kw['preview']}")
+    _log.info("starting camera %s", cam.id, extra={
+        "camera": cam.id, "source": cam.source_display,
+        "model": kw["model_path"], "imgsz": kw["imgsz"],
+        "preview": kw["preview"]})
     summary = FootfallTracker(**kw).run()
-    print(f"[{cam.id}] " + "  ".join(f"{k}={v}" for k, v in summary.items()))
+    _log.info("camera %s finished", cam.id, extra={"camera": cam.id, **summary})
     return summary
 
 
@@ -68,6 +74,9 @@ def main():
                     help="serve the localhost control API on this port "
                          "(with --all, cameras get port, port+1, ...)")
     args = ap.parse_args()
+
+    if not args.show:
+        configure()
 
     # --print inspects the config without touching the secret store
     try:
@@ -105,7 +114,7 @@ def main():
             for t in threads:
                 t.join()
         except KeyboardInterrupt:
-            print("\n[interrupted] stopping cameras")
+            _log.info("interrupted; stopping cameras")
         return
 
     if len(site.cameras) == 1:

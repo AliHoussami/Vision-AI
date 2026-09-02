@@ -1,0 +1,27 @@
+# Single-box deployment. `docker compose up -d` builds the image and keeps
+# the pipeline running across crashes and reboots.
+
+services:
+  footfall:
+    build: .
+    restart: unless-stopped
+    command: ["config/site.yaml"]        # or ["config/site.yaml", "--all"]
+    environment:
+      FOOTFALL_LOG_FORMAT: json
+      FOOTFALL_LOG_LEVEL: INFO
+      # camera secrets: set them here or via an env_file, referenced from
+      # the source as ${SECRET:name} (FOOTFALL_SECRET_<NAME>)
+      # FOOTFALL_SECRET_CAM_NORTH: "admin:changeme"
+    volumes:
+      - ./config:/app/config:ro           # site.yaml, secrets.yaml, zones/
+      - footfall-models:/app/models       # downloaded YOLO weights
+      - footfall-output:/app/output       # events.db + annotated recordings
+    # A USB camera on the host:
+    # devices:
+    #   - "/dev/video0:/dev/video0"
+    # RTSP discovery / cameras on the LAN often need host networking:
+    # network_mode: host
+
+volumes:
+  footfall-models:
+  footfall-output:

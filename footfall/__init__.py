@@ -51,6 +51,7 @@ def output(name: str) -> str:
 from .config import (CameraConfig, ConfigError, SiteConfig,  # noqa: E402
                      load_config, resolved, tracker_kwargs)
 from .control import ControlServer, LiveControls  # noqa: E402
+from .logsetup import configure as configure_logging  # noqa: E402
 from .secrets import (SecretError, get_secret,  # noqa: E402
                       redact, resolve_placeholders)
 from .storage import (CsvEventSink, EventSink, NullSink,  # noqa: E402
@@ -88,4 +89,5 @@ __all__ = [
     "resolve_placeholders",
     "get_secret",
     "SecretError",
+    "configure_logging",
 ]

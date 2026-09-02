@@ -20,8 +20,11 @@ for now. Real authentication is a Phase 5 concern.
 """
 
 import json
+import logging
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+_log = logging.getLogger(__name__)
 
 # name -> (accepted python types, predicate). bool is handled specially
 # because isinstance(True, int) is True.
@@ -139,8 +142,8 @@ def _make_handler(tracker):
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
 
-        def log_message(self, *_a):        # silence the stderr access log
-            pass
+        def log_message(self, fmt, *args):   # off the stderr access log
+            _log.debug("%s " + fmt, self.address_string(), *args)
 
         def _send(self, code, payload):
             data = json.dumps(payload).encode()

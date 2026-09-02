@@ -25,6 +25,7 @@ Usage (see run_demo.py for a runnable example):
     print(summary)
 """
 
+import logging
 import time
 from collections import defaultdict
 from dataclasses import dataclass
@@ -33,6 +34,8 @@ from typing import List, Optional, Tuple
 
 import cv2
 from ultralytics import YOLO
+
+_log = logging.getLogger(__name__)
 
 from .capture import ReconnectingCapture
 from .control import LiveControls
@@ -384,8 +387,8 @@ class FootfallTracker:
         if (gw, gh) == (frame_w, frame_h) or not gw or not gh:
             return
         sx, sy = frame_w / float(gw), frame_h / float(gh)
-        print(f"[geometry] drawn on {gw}x{gh}, frame is {frame_w}x{frame_h}"
-              f" -- rescaling by {sx:.3f}x{sy:.3f}")
+        _log.info(f"geometry drawn on {gw}x{gh}, frame is {frame_w}x{frame_h}"
+                  f" -- rescaling by {sx:.3f}x{sy:.3f}")
         if self.line:
             a, b = self.line
             self.line = (Point(a.x * sx, a.y * sy), Point(b.x * sx, b.y * sy))
@@ -404,7 +407,8 @@ class FootfallTracker:
         if self.control_port is not None:
             from .control import ControlServer
             control_server = ControlServer(self, port=self.control_port).start()
-            print(f"[control] http://{control_server.host}:{control_server.port}")
+            _log.info(f"control API on http://{control_server.host}:"
+                      f"{control_server.port}")
 
         try:
             for result in self._iter_results():
@@ -449,14 +453,14 @@ class FootfallTracker:
                     cv2.imshow(self._preview_window, disp)
                     # waitKey is what actually paints the window; Q or ESC quits
                     if (cv2.waitKey(1) & 0xFF) in (ord("q"), 27):
-                        print("[preview] stop requested")
+                        _log.info("preview stop requested")
                         break
 
                 frame_idx += 1
                 if self.max_frames and frame_idx >= self.max_frames:
                     break
         except KeyboardInterrupt:
-            print("[interrupted] flushing outputs...")
+            _log.info("interrupted; flushing outputs")
         finally:
             # close out still-open dwell sessions BEFORE the sink closes,
             # so a Ctrl+C on a live camera still leaves usable output

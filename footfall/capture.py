@@ -34,6 +34,7 @@ H.264/H.265 is the CPU bottleneck once several cameras share one box.
         ...
 """
 
+import logging
 import threading
 import time
 from typing import Callable, Optional, Tuple
@@ -42,6 +43,8 @@ import cv2
 import numpy as np
 
 from .secrets import redact
+
+_log = logging.getLogger(__name__)
 
 # URL schemes that mean "a live stream", i.e. reconnect forever rather
 # than treating a failed read as end-of-input.
@@ -110,7 +113,8 @@ class ReconnectingCapture:
         cap_factory: Optional[Callable] = None,
         sleep: Callable[[float], None] = time.sleep,
         monotonic: Callable[[], float] = time.monotonic,
-        log: Callable[[str], None] = print,
+        log: Optional[Callable[[str], None]] = None,
+        warn: Optional[Callable[[str], None]] = None,
     ):
         """
         source          camera index, file path, or stream URL
@@ -135,7 +139,7 @@ class ReconnectingCapture:
                         with the hw_accel choice applied
         sleep           injectable for tests; defaults to time.sleep
         monotonic       injectable for tests; defaults to time.monotonic
-        log             where status lines go; defaults to print
+        log / warn      info / warning sinks; default to this module's logger
         """
         # "0" -> 0, so a digit string still opens a device (cv2.VideoCapture
         # needs a real int for a camera index)
@@ -156,7 +160,8 @@ class ReconnectingCapture:
         self._cap_factory = cap_factory or self._default_capture
         self._sleep = sleep
         self._monotonic = monotonic
-        self._log = log
+        self._log = log or _log.info
+        self._warn = warn or _log.warning
 
         # number of times a live stream came back after dropping (does not
         # count the very first open)
@@ -192,8 +197,8 @@ class ReconnectingCapture:
         self._retries = 0
 
     def _backoff(self, reason: str):
-        self._log(f"[capture] {reason}; retrying in {self._delay:.1f}s "
-                  f"(attempt {self._retries + 1})")
+        self._warn(f"{reason}; retrying in {self._delay:.1f}s "
+                   f"(attempt {self._retries + 1})")
         self._sleep(self._delay)
         self.waits.append(self._delay)
         self._retries += 1
@@ -242,8 +247,8 @@ class ReconnectingCapture:
                 return
             self.stale_trips += 1
             self._stale_tripped = True
-            self._log(f"[capture] {self._display!r} delivered no new frame for "
-                      f"~{self.stale_after:.0f}s; forcing reconnect")
+            self._warn(f"{self._display!r} delivered no new frame for "
+                       f"~{self.stale_after:.0f}s; forcing reconnect")
             try:
                 self._cap.release()          # unblocks a hung read()
             except Exception:
@@ -311,7 +316,8 @@ class ReconnectingCapture:
             self.hw_accel_active = "unknown"
             return
         self.hw_accel_active = _HW_ACCEL_NAMES.get(val, f"type{val}")
-        self._log(f"[capture] decode acceleration: {self.hw_accel_active}")
+        self._log(f"decode acceleration for {self._display!r}: "
+                  f"{self.hw_accel_active}")
 
     def _open(self):
         """Return an opened capture, or None if it could not be opened."""
@@ -367,7 +373,7 @@ class ReconnectingCapture:
                     self._last_sig = None
                     if self._opened_once:
                         self.reconnects += 1
-                        self._log(f"[capture] reconnected to {self._display!r} "
+                        self._log(f"reconnected to {self._display!r} "
                                   f"(reconnect #{self.reconnects})")
                     self._opened_once = True
                     self._reset_backoff()

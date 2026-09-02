@@ -147,8 +147,13 @@ and writes to a real database.
   the event DB, or shown by `--print`; only `cv2.VideoCapture` ever sees
   the real URL. `get_rtsp_url.py` prompts for the password instead of
   taking it on the command line.
-- Packaging: a container image, a supervised process (systemd / container
-  restart policy), structured JSON logging.
+- Packaging: `Dockerfile` + `docker-compose.yml` (`restart: unless-stopped`,
+  config mounted read-only, models/output as named volumes) and a systemd
+  unit in `deploy/` with a crash-loop backoff. Library modules log through
+  `logging.getLogger("footfall.*")`; `footfall/logsetup.py` `configure()`
+  emits line-delimited JSON (ts, level, logger, msg, extras, exception) by
+  default, `FOOTFALL_LOG_FORMAT=text` for a console. The `requirements.txt`
+  numpy/opencv pins are fixed so a clean install resolves.
 - Test suite: unit tests for line-crossing and point-in-polygon geometry, a
   regression test that replays committed clips and asserts expected counts,
   and CI that runs both.

@@ -1,0 +1,20 @@
+.git/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+tests/
+models/
+output/
+*.mp4
+*.avi
+*.mkv
+*.db
+*.db-wal
+*.db-shm
+# real per-site config / credentials are provided at run time, never baked in
+config/site.yaml
+config/*.local.yaml
+config/secrets.yaml
+config/zones/
+.DS_Store
