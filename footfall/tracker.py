@@ -36,6 +36,7 @@ import cv2
 from ultralytics import YOLO
 
 from .capture import ReconnectingCapture
+from .pipeline import ThreadedFrameSource
 
 
 @dataclass
@@ -119,6 +120,8 @@ class FootfallTracker:
         reconnect_factor: float = 2.0,
         reconnect_max: float = 30.0,
         reconnect_retries: Optional[int] = None,
+        frame_buffer: int = 2,
+        drop_stale_frames: Optional[bool] = None,
     ):
         self.source = source
         self.line = line
@@ -161,6 +164,14 @@ class FootfallTracker:
         self.reconnect_max = reconnect_max
         self.reconnect_retries = reconnect_retries
         self._capture = None
+
+        # Capture runs on its own thread with a small bounded buffer, so a
+        # slow inference step drops stale frames instead of making the
+        # camera fall behind real time. drop_stale_frames=None means "drop
+        # on a live source, keep every frame from a file".
+        self.frame_buffer = frame_buffer
+        self.drop_stale_frames = drop_stale_frames
+        self._frame_source = None
 
         from . import resolve_model
 
@@ -286,11 +297,12 @@ class FootfallTracker:
     def _iter_results(self):
         """Yield per-frame Results.
 
-        We always own the capture (through ReconnectingCapture) instead of
-        handing the source to ultralytics, so a dropped RTSP or webcam
-        stream reconnects with exponential backoff rather than ending the
-        run. Frames go to the tracker one at a time; persist=True carries
-        track state across them, and across a reconnect.
+        Capture is owned here (through ReconnectingCapture, so a dropped
+        RTSP/webcam stream reconnects with backoff) and run on its own
+        thread (through ThreadedFrameSource, so this loop dropping behind
+        does not stall the camera). Frames reach the tracker one at a time;
+        persist=True carries track state across them, and across a
+        reconnect.
         """
         track_kw = dict(
             classes=[self.person_class_id],
@@ -312,7 +324,11 @@ class FootfallTracker:
             backoff_max=self.reconnect_max,
             max_retries=self.reconnect_retries,
         )
-        for frame in self._capture.frames():
+        drop = (self.drop_stale_frames if self.drop_stale_frames is not None
+                else self._capture.is_live)
+        self._frame_source = ThreadedFrameSource(
+            self._capture.frames(), drop=drop, maxsize=self.frame_buffer)
+        for frame in self._frame_source:
             yield self.model.track(frame, **track_kw)[0]
 
     def _fit_geometry(self, frame_w: int, frame_h: int):
@@ -428,4 +444,6 @@ class FootfallTracker:
             "peak_minute": peak_minute[0],
             "peak_minute_count": peak_minute[1],
             "reconnects": self._capture.reconnects if self._capture else 0,
+            "dropped_frames": (self._frame_source.dropped
+                               if self._frame_source else 0),
         }
