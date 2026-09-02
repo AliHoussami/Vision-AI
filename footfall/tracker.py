@@ -136,6 +136,7 @@ class FootfallTracker:
         frame_buffer: int = 2,
         drop_stale_frames: Optional[bool] = None,
         control_port: Optional[int] = None,
+        model=None,
     ):
         self.source = source
         # credential-masked form for logs, the event store, and any status
@@ -204,9 +205,13 @@ class FootfallTracker:
         self.control_port = control_port
         self._controls = LiveControls(self)
 
-        from . import resolve_model
-
-        self.model = YOLO(resolve_model(model_path))
+        # `model` lets a test (or a caller with its own detector) skip the
+        # YOLO weight load entirely.
+        if model is not None:
+            self.model = model
+        else:
+            from . import resolve_model
+            self.model = YOLO(resolve_model(model_path))
 
         # track_id -> last known side of the line (float sign)
         self._last_side = {}

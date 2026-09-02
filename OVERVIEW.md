@@ -154,9 +154,14 @@ and writes to a real database.
   emits line-delimited JSON (ts, level, logger, msg, extras, exception) by
   default, `FOOTFALL_LOG_FORMAT=text` for a console. The `requirements.txt`
   numpy/opencv pins are fixed so a clean install resolves.
-- Test suite: unit tests for line-crossing and point-in-polygon geometry, a
-  regression test that replays committed clips and asserts expected counts,
-  and CI that runs both.
+- Test suite (124 tests): `test_geometry.py` covers `_side_of_line`,
+  `_point_in_polygon`, the line-crossing state machine, zone dwell,
+  `_fit_geometry` rescaling and the box sanity filter (a `model=` hook
+  skips the YOLO load); `test_regression.py` drives `FootfallTracker.run()`
+  end to end with a scripted fake detector over a generated clip and
+  asserts exact counts and the event stream. `.github/workflows/ci.yml`
+  runs `pytest` on every push and PR. A real-footage accuracy benchmark is
+  Phase 2.
 
 ### Phase 2 — Accuracy we can put in a contract
 
